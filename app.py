@@ -567,20 +567,13 @@ if accounting_file and budget_file:
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         # Helper to prepare full dataset (excluding internal columns)
                         def get_full_export_df(df):
-                            # Internal columns to exclude
-                            internal_cols = [
-                                '_uid', '_uid_ACC', '_uid_BUD', '_merge', 
-                                'Instance_ID_1', 'Instance_ID_2', 
-                                'Data_Mismatches', 'Has_Data_Mismatch', 
-                                'Amount_Diff', 'Abs_Diff',
-                                'Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD', 'Match_Amount_ACC', 'Match_Amount_BUD'
-                            ]
-                            # Keep ORS as first column
-                            cols = ['Clean_ORS'] + [c for c in df.columns if c not in internal_cols and c != 'Clean_ORS']
+                            # User Request: Only ORS, Mismatch_Reasons, and Status
+                            target_cols = ['Clean_ORS', 'Mismatch_Reasons', 'Status']
                             
-                            # Filter to existing
-                            cols = [c for c in cols if c in df.columns]
-                            return df[cols].rename(columns={'Clean_ORS': 'ORS Number'})
+                            # Filter to existing columns (if Mismatch_Reasons is missing, it won't crash)
+                            final_cols = [c for c in target_cols if c in df.columns]
+                            
+                            return df[final_cols].rename(columns={'Clean_ORS': 'ORS Number'})
 
                         # Helper to write sheet
                         def write_sheet(df, sheet_name, include_all_cols=False):
