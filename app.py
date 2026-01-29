@@ -150,10 +150,10 @@ else:
 
         /* Fix DataFrame Toolbar and Header */
         [data-testid="stDataFrame"] {
-            background-color: #FFFFFF !important;
+            background-color: #262730 !important;
         }
         [data-testid="stDataFrame"] div {
-            color: #172B4D !important;
+            color: #FFFFFF !important;
         }
         
         /* Streamlit Toolbar (Top Right) */
