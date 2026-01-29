@@ -125,55 +125,96 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
         else:
             df['__Amount'] = 0.0
 
-        # 2. Dynamic Match Key Creation (Per Sheet)
-        # Logic: If ORS is UNIQUE -> Key = ORS; If DUPLICATED -> Key = ORS + Amount
-        is_duplicated = df.duplicated(subset=['__ORS'], keep=False)
+        # 2. Match Logic: Two-Pass Approach
+    
+    # PASS 1: Strict Match (ORS + Amount)
+    # This handles duplicates correctly and finds perfect matches
+    for df in processed_dfs:
+        # Multiply by 100, round, convert to int, then to string. Safe and fast.
+        amt_int = (df['__Amount'] * 100).round().astype(int).astype(str)
+        df['__MATCH_KEY_STRICT'] = df['__ORS'] + '_' + amt_int
         
-        amt_str = df['__Amount'].astype(str)
+    combined_strict = pd.concat(processed_dfs, ignore_index=True)
+    
+    # Filter keys appearing in >1 source
+    key_counts = combined_strict.groupby('__MATCH_KEY_STRICT')['__SOURCE_SHEET'].nunique()
+    valid_keys_strict = key_counts[key_counts > 1].index
+    
+    candidates_strict = combined_strict[combined_strict['__MATCH_KEY_STRICT'].isin(valid_keys_strict)]
+    
+    merged_strict = pd.DataFrame()
+    if not candidates_strict.empty:
+        merged_strict = pd.merge(candidates_strict, candidates_strict, on='__MATCH_KEY_STRICT', suffixes=('_L', '_R'))
+        # Remove self-matches and enforce order
+        merged_strict = merged_strict[merged_strict['__SOURCE_SHEET_L'] != merged_strict['__SOURCE_SHEET_R']]
+        merged_strict = merged_strict[merged_strict['__SOURCE_SHEET_L'] < merged_strict['__SOURCE_SHEET_R']]
+    
+    # Track matched indices to exclude them from Pass 2
+    matched_indices_L = set(merged_strict['__ORIG_IDX_L']) if not merged_strict.empty else set()
+    matched_indices_R = set(merged_strict['__ORIG_IDX_R']) if not merged_strict.empty else set()
+    
+    # PASS 2: Loose Match (ORS only) on RESIDUALS
+    # This catches "Unique ORS" cases where Amount differs
+    
+    # Filter residuals
+    residuals = []
+    for df in processed_dfs:
+        sheet_name = df['__SOURCE_SHEET'].iloc[0]
+        # Identify which set of matched indices corresponds to this sheet
+        # (Assuming 2 sheets, L is first, R is second)
+        # Better: check against both sets since we don't know if this sheet was L or R in a specific row
+        # Actually, __ORIG_IDX is unique per sheet, but potentially overlapping across sheets?
+        # Yes, standard index 0,1,2...
+        # So we need to be careful. The merged df has __SOURCE_SHEET_L/R.
         
-        df['__MATCH_KEY'] = np.where(
-            is_duplicated,
-            df['__ORS'] + '_' + amt_str,
-            df['__ORS']
-        )
+        # Get matched IDs for THIS sheet
+        matched_in_L = merged_strict[merged_strict['__SOURCE_SHEET_L'] == sheet_name]['__ORIG_IDX_L'] if not merged_strict.empty else []
+        matched_in_R = merged_strict[merged_strict['__SOURCE_SHEET_R'] == sheet_name]['__ORIG_IDX_R'] if not merged_strict.empty else []
         
-        df['__SOURCE_SHEET'] = sheet_name
-        # Keep original index
-        df['__ORIG_IDX'] = df.index
+        matched_ids = set(matched_in_L).union(set(matched_in_R))
         
-        processed_dfs.append(df)
+        # Keep only unmatched
+        res_df = df[~df['__ORIG_IDX'].isin(matched_ids)].copy()
         
-    if not processed_dfs:
+        # CRITICAL: Only allow match if ORS is UNIQUE in this residual set?
+        # User said: "The ORS match-for UNIQUE ORS"
+        # We will filter for uniqueness later or now?
+        # If we just merge on ORS, we might get cartesian products for duplicates.
+        # We should only keep rows where ORS is unique in this residual DF.
+        
+        ors_counts = res_df['__ORS'].value_counts()
+        unique_ors = ors_counts[ors_counts == 1].index
+        res_df_unique = res_df[res_df['__ORS'].isin(unique_ors)]
+        
+        # We also define the match key as just ORS
+        res_df_unique['__MATCH_KEY_LOOSE'] = res_df_unique['__ORS']
+        residuals.append(res_df_unique)
+        
+    combined_loose = pd.concat(residuals, ignore_index=True)
+    merged_loose = pd.DataFrame()
+    
+    if not combined_loose.empty:
+        key_counts_loose = combined_loose.groupby('__MATCH_KEY_LOOSE')['__SOURCE_SHEET'].nunique()
+        valid_keys_loose = key_counts_loose[key_counts_loose > 1].index
+        
+        candidates_loose = combined_loose[combined_loose['__MATCH_KEY_LOOSE'].isin(valid_keys_loose)]
+        
+        if not candidates_loose.empty:
+            merged_loose = pd.merge(candidates_loose, candidates_loose, on='__MATCH_KEY_LOOSE', suffixes=('_L', '_R'))
+            merged_loose = merged_loose[merged_loose['__SOURCE_SHEET_L'] != merged_loose['__SOURCE_SHEET_R']]
+            merged_loose = merged_loose[merged_loose['__SOURCE_SHEET_L'] < merged_loose['__SOURCE_SHEET_R']]
+            
+    # Combine Matches
+    # We need to align columns. 
+    # Strict has __MATCH_KEY_STRICT, Loose has __MATCH_KEY_LOOSE.
+    # We can drop the key columns or align them.
+    
+    final_matches = pd.concat([merged_strict, merged_loose], ignore_index=True, sort=False)
+    
+    if final_matches.empty:
         return pd.DataFrame()
-
-    # 3. Combine all sheets
-    combined_df = pd.concat(processed_dfs, ignore_index=True)
-    
-    # 4. Reduce join size: Filter keys appearing in >1 source
-    # We want keys that exist in at least 2 DIFFERENT sheets.
-    # Count unique sheets per key
-    key_counts = combined_df.groupby('__MATCH_KEY')['__SOURCE_SHEET'].nunique()
-    valid_keys = key_counts[key_counts > 1].index
-    
-    candidates = combined_df[combined_df['__MATCH_KEY'].isin(valid_keys)]
-    
-    if candidates.empty:
-        return pd.DataFrame()
         
-    # 5. Perform Inner Join on MATCH_KEY
-    merged = pd.merge(
-        candidates, 
-        candidates, 
-        on='__MATCH_KEY', 
-        suffixes=('_L', '_R')
-    )
-    
-    # 6. Remove matches from same source
-    merged = merged[merged['__SOURCE_SHEET_L'] != merged['__SOURCE_SHEET_R']]
-    
-    # Enforce order to avoid duplicates (A-B vs B-A) and standardizing output
-    # If sources are 'Accounting' and 'Budget', 'Accounting' < 'Budget'.
-    merged = merged[merged['__SOURCE_SHEET_L'] < merged['__SOURCE_SHEET_R']]
+    merged = final_matches
     
     # 7. Column Comparison (Vectorized)
     merged['__ALL_COLS_MATCH'] = True
@@ -221,10 +262,6 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
             # Fix 'nan' string from astype(str) on np.nan
             val_L = val_L.replace('nan', '')
             val_R = val_R.replace('nan', '')
-            
-            # Remove spaces for comparison (disregard spaces in Payee/matching columns)
-            val_L = val_L.str.replace(' ', '', regex=False)
-            val_R = val_R.str.replace(' ', '', regex=False)
             
             is_match = val_L == val_R
             
@@ -311,13 +348,14 @@ def reconcile_data(df_acc, df_bud, acc_ors_col, bud_ors_col, acc_amt_col, bud_am
             res['Clean_ORS'] = acc_row['Clean_ORS']
             res['Clean_Amount_ACC'] = acc_row['Clean_Amount']
             res['Clean_Amount_BUD'] = bud_row['Clean_Amount']
-            res['Abs_Diff'] = abs(res['Clean_Amount_ACC'] - res['Clean_Amount_BUD'])
+            res['Abs_Diff'] = round(abs(res['Clean_Amount_ACC'] - res['Clean_Amount_BUD']), 2)
             
             # Status & Mismatches
             reasons = row['__MISMATCH_REASONS']
             mismatches = [r.strip() for r in reasons.split('|') if r.strip()]
             
-            if res['Abs_Diff'] > 0.01:
+            # Note: Abs_Diff > 0 should not happen with strict matching, but we keep the logic just in case
+            if res['Abs_Diff'] > 0:
                 mismatches.insert(0, f"Amount: '{res['Clean_Amount_ACC']}' (Acc) vs '{res['Clean_Amount_BUD']}' (Bud)")
                 
             res['Data_Mismatches'] = mismatches
@@ -325,18 +363,41 @@ def reconcile_data(df_acc, df_bud, acc_ors_col, bud_ors_col, acc_amt_col, bud_am
             res['Has_Data_Mismatch'] = len(mismatches) > 0
             res['_merge'] = 'both'
             
-            is_amt_diff = res['Abs_Diff'] > 0.01
-            non_amt = [m for m in mismatches if not m.startswith("Amount:")]
-            is_data_diff = len(non_amt) > 0
+            # Simplified Status Logic as per user request
+            # 1. Fully Matched
+            # 2. Data Mismatch
+            #    A. Amount Mismatch
+            #    B. Payee Mismatch (or other mapped columns)
+            # 3. Missing (Handled in unmatched sections)
             
-            if is_amt_diff and is_data_diff:
-                res['Status'] = 'Amount & Data Mismatch'
-            elif is_amt_diff:
-                res['Status'] = 'Amount Mismatch'
-            elif is_data_diff:
-                res['Status'] = 'Data Mismatch'
-            else:
+            status_parts = []
+            
+            if res['Abs_Diff'] > 0:
+                status_parts.append("Amount Mismatch")
+                
+            if res['Has_Data_Mismatch']:
+                # Check for specific column mismatches in reasons
+                # The reasons string format is "Display: 'Val1' vs 'Val2'"
+                # We can extract the display names
+                
+                # Check if this is ONLY Amount Mismatch (if we added it to mismatches list above)
+                # We added "Amount:" to mismatches list if Abs_Diff > 0
+                
+                # Filter out the "Amount:" mismatch to check for text mismatches
+                text_mismatches = [m for m in mismatches if not m.startswith("Amount:")]
+                
+                if text_mismatches:
+                    # Extract column names from text mismatches
+                    # Format: "Column: 'A' vs 'B'"
+                    for tm in text_mismatches:
+                        col_name = tm.split(':')[0]
+                        if f"{col_name} Mismatch" not in status_parts:
+                            status_parts.append(f"{col_name} Mismatch")
+            
+            if not status_parts:
                 res['Status'] = 'Fully Matched'
+            else:
+                res['Status'] = ', '.join(status_parts)
                 
             results.append(res)
             

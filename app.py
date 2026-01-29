@@ -440,22 +440,33 @@ if accounting_file and budget_file:
                         st.stop()
 
                 # Summary Metrics
-                summary = merged['Status'].value_counts()
+                # Updated to handle dynamic Status strings (e.g., "Payee Mismatch", "Amount Mismatch, Payee Mismatch")
+                
+                mask_fully_matched = merged['Status'] == 'Fully Matched'
+                mask_missing_bud = merged['Status'] == 'Missing in Budget'
+                mask_missing_acc = merged['Status'] == 'Missing in Accounting'
+                
+                # Check for Amount Mismatch (substring search)
+                mask_amt_mismatch = merged['Status'].str.contains('Amount Mismatch', case=False, na=False)
+                
+                # Check for Data Mismatch (using the boolean flag from core)
+                # Note: 'Has_Data_Mismatch' is TRUE for both Amount and Text mismatches
+                mask_data_mismatch = merged['Has_Data_Mismatch']
                 
                 # Metric Rows
                 row1_cols = st.columns(3)
-                row1_cols[0].metric("✅ Fully Matched", summary.get('Fully Matched', 0))
-                row1_cols[1].metric("❌ Missing in Budget", summary.get('Missing in Budget', 0))
-                row1_cols[2].metric("❌ Missing in Accounting", summary.get('Missing in Accounting', 0))
+                row1_cols[0].metric("✅ Fully Matched", int(mask_fully_matched.sum()))
+                row1_cols[1].metric("❌ Missing in Budget", int(mask_missing_bud.sum()))
+                row1_cols[2].metric("❌ Missing in Accounting", int(mask_missing_acc.sum()))
 
-                row2_cols = st.columns(2)
-                row2_cols[0].metric("⚠️ Data Mismatch", summary.get('Data Mismatch', 0))
-                row2_cols[1].metric("⚠️ Both Mismatches", summary.get('Amount & Data Mismatch', 0))
+                # Consolidated Mismatch Metric (includes Amount & Data)
+                row2_cols = st.columns(1)
+                row2_cols[0].metric("⚠️ Data Mismatch", int(mask_data_mismatch.sum()), help="Includes both Amount and Text (e.g., Payee) mismatches")
 
                 # --- High-Level Mismatch Drivers (Dashboard) ---
-                if summary.get('Data Mismatch', 0) > 0 or summary.get('Amount & Data Mismatch', 0) > 0:
-                    # Get all rows with data mismatches
-                    all_mismatch_mask = merged['Status'].isin(['Data Mismatch', 'Amount & Data Mismatch'])
+                if mask_data_mismatch.any():
+                    # Get all rows with ANY mismatch (excluding missing)
+                    all_mismatch_mask = mask_data_mismatch
                     all_mismatch_df = merged[all_mismatch_mask]
                     
                     if not all_mismatch_df.empty:
@@ -512,7 +523,8 @@ if accounting_file and budget_file:
                 
                 with tabs[1]:
                     st.caption("Records with Amount differences")
-                    mask = merged['Status'].isin(['Amount Mismatch', 'Amount & Data Mismatch'])
+                    # Filter: Status contains "Amount Mismatch"
+                    mask = merged['Status'].str.contains('Amount Mismatch', case=False, na=False)
                     st.dataframe(
                         merged[mask][detailed_display_cols]
                         .rename(columns={'Clean_ORS': 'ORS Number'})
@@ -520,7 +532,9 @@ if accounting_file and budget_file:
                 
                 with tabs[2]:
                     st.caption("Records where Amounts match, but other columns differ")
-                    mask = merged['Status'] == 'Data Mismatch'
+                    # Filter: Has Data Mismatch (boolean flag)
+                    # Note: This tab might overlap with Amount Issues if both mismatch, which is fine/helpful
+                    mask = merged['Has_Data_Mismatch']
                     df_mismatch = merged[mask]
 
                     # --- Mismatch Breakdown ---
@@ -528,6 +542,8 @@ if accounting_file and budget_file:
                         mismatch_counts = {}
                         for reasons in df_mismatch['Data_Mismatches']:
                             for r in reasons:
+                                if "Amount:" in r: 
+                                    continue
                                 # Extract column name (everything before the first colon)
                                 col = r.split(':')[0]
                                 mismatch_counts[col] = mismatch_counts.get(col, 0) + 1
