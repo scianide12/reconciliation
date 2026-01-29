@@ -52,36 +52,44 @@ else:
     # Force Light Mode CSS (Day Mode - "Clean Slate" Professional Theme)
     st.markdown("""
     <style>
+        /* Force Streamlit Theme Variables for Light Mode */
+        :root {
+            --primary-color: #091E42;
+            --background-color: #FFFFFF;
+            --secondary-background-color: #F7F9FC;
+            --text-color: #172B4D;
+            --font: sans-serif;
+        }
+
         /* Main App Background - Clean White */
         .stApp {
             background-color: #FFFFFF;
             color: #172B4D; /* Deep Blue-Grey (Enterprise Standard) */
         }
+        
+        /* Force Text Colors for All Elements */
+        p, div, span, label, h1, h2, h3, h4, h5, h6, .stMarkdown, .stText {
+            color: #172B4D !important;
+        }
+
         /* Sidebar Background - Cool Light Gray */
         [data-testid="stSidebar"] {
             background-color: #F7F9FC;
             border-right: 1px solid #DFE1E6;
         }
-        /* Headers - Darker Blue-Grey */
-        h1, h2, h3, h4, h5, h6 {
-            color: #091E42 !important;
-        }
-        /* Body Text, Labels, Markdown */
-        .stMarkdown, .stText, p, label, span, div, li, [data-testid="stMetricValue"] {
-            color: #172B4D !important;
-        }
-        
-        /* Input Fields - White Background, Dark Text, Subtle Border */
-        .stTextInput > div > div > input {
-            color: #172B4D;
-            background-color: #FFFFFF;
-            border: 1px solid #DFE1E6;
-        }
-        .stSelectbox > div > div > div {
-            color: #172B4D;
-            background-color: #FFFFFF;
+        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+             color: #172B4D !important;
         }
 
+        /* Input Fields - White Background, Dark Text, Subtle Border */
+        .stTextInput > div > div > input,
+        .stSelectbox > div > div > div,
+        .stNumberInput > div > div > input {
+            color: #172B4D !important;
+            background-color: #FFFFFF !important;
+            border: 1px solid #DFE1E6;
+        }
+        
         /* Fix Dropdown Menu Options Visibility */
         ul[data-testid="stSelectboxVirtualDropdown"] {
             background-color: #FFFFFF !important;
@@ -122,6 +130,9 @@ else:
         }
         
         /* Universal Button Fix (Download, Submit, etc.) */
+        button {
+            color: #172B4D !important;
+        }
         .stButton > button, .stDownloadButton > button {
             color: #172B4D !important;
             background-color: #FFFFFF !important;
@@ -134,6 +145,20 @@ else:
         .stDownloadButton > button:hover {
             border-color: #172B4D !important;
             background-color: #F0F2F6 !important;
+            color: #172B4D !important;
+        }
+
+        /* Fix DataFrame Toolbar and Header */
+        [data-testid="stDataFrame"] {
+            background-color: #FFFFFF !important;
+        }
+        [data-testid="stDataFrame"] div {
+            color: #172B4D !important;
+        }
+        
+        /* Streamlit Toolbar (Top Right) */
+        [data-testid="stToolbar"] {
+            color: #172B4D !important;
         }
     </style>
     """, unsafe_allow_html=True)
