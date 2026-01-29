@@ -222,6 +222,10 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
             val_L = val_L.replace('nan', '')
             val_R = val_R.replace('nan', '')
             
+            # Remove spaces for comparison (disregard spaces in Payee/matching columns)
+            val_L = val_L.str.replace(' ', '', regex=False)
+            val_R = val_R.str.replace(' ', '', regex=False)
+            
             is_match = val_L == val_R
             
             merged['__ALL_COLS_MATCH'] &= is_match
