@@ -300,7 +300,7 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
             # Construct mismatch text
             # Vectorized construction is tricky for varying strings, but we can do:
             # "Reason | " where not match
-            reason = display + ": '" + merged[col_L].astype(str) + "' vs '" + merged[col_R].astype(str) + "' | "
+            reason = display + ": '" + merged[col_L].astype(str) + "' (Acc) vs '" + merged[col_R].astype(str) + "' (Bud) | "
             merged['__MISMATCH_REASONS'] += np.where(~is_match, reason, "")
             
     merged['__MISMATCH_REASONS'] = merged['__MISMATCH_REASONS'].str.strip(' | ')
