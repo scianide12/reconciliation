@@ -577,8 +577,8 @@ if accounting_file and budget_file:
                 # Detailed Views
                 st.subheader("Detailed Breakdown")
                 
-                # Consolidated Tabs: Fully Matched | Data Mismatches | Missing
-                tabs = st.tabs(["✅ Fully Matched", "⚠️ Data Mismatches", "❌ Missing"])
+                # Consolidated Tabs: Fully Matched | Data Mismatches | Missing in Accounting | Missing in Budget
+                tabs = st.tabs(["✅ Fully Matched", "⚠️ Data Mismatches", "❌ Missing in Accounting", "❌ Missing in Budget"])
                 
                 with tabs[0]:
                     # Rename for display
@@ -623,10 +623,18 @@ if accounting_file and budget_file:
                     )
                 
                 with tabs[2]:
-                    # Missing (Budget or Accounting)
-                    mask = mask_missing_bud | mask_missing_acc
+                    # Missing in Accounting
+                    st.caption("Records present in Budget but missing in Accounting")
                     st.dataframe(
-                        merged[mask][basic_display_cols]
+                        merged[mask_missing_acc][basic_display_cols]
+                        .rename(columns={'Clean_ORS': 'ORS Number'})
+                    )
+                    
+                with tabs[3]:
+                    # Missing in Budget
+                    st.caption("Records present in Accounting but missing in Budget")
+                    st.dataframe(
+                        merged[mask_missing_bud][basic_display_cols]
                         .rename(columns={'Clean_ORS': 'ORS Number'})
                     )
 
