@@ -57,37 +57,37 @@ else:
             --primary-color: #091E42;
             --background-color: #FFFFFF;
             --secondary-background-color: #F7F9FC;
-            --text-color: #172B4D;
+            --text-color: #000000;
             --font: sans-serif;
         }
 
         /* Main App Background - Clean White */
         .stApp {
             background-color: #FFFFFF;
-            color: #172B4D; /* Deep Blue-Grey (Enterprise Standard) */
+            color: #000000; /* Pure Black for Maximum Readability */
         }
         
         /* Force Text Colors for All Elements */
         p, div, span, label, h1, h2, h3, h4, h5, h6, .stMarkdown, .stText {
-            color: #172B4D !important;
+            color: #000000 !important;
         }
 
         /* Sidebar Background - Cool Light Gray */
         [data-testid="stSidebar"] {
             background-color: #F7F9FC;
-            border-right: 1px solid #DFE1E6;
+            border-right: 1px solid #D1D5DB;
         }
         [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-             color: #172B4D !important;
+             color: #000000 !important;
         }
 
         /* Input Fields - White Background, Dark Text, Subtle Border */
         .stTextInput > div > div > input,
         .stSelectbox > div > div > div,
         .stNumberInput > div > div > input {
-            color: #172B4D !important;
+            color: #000000 !important;
             background-color: #FFFFFF !important;
-            border: 1px solid #DFE1E6;
+            border: 1px solid #D1D5DB;
         }
         
         /* Fix Dropdown Menu Options Visibility */
@@ -95,7 +95,7 @@ else:
             background-color: #FFFFFF !important;
         }
         ul[data-testid="stSelectboxVirtualDropdown"] li {
-            color: #172B4D !important;
+            color: #000000 !important;
             background-color: #FFFFFF !important;
         }
         /* Hover state for options */
@@ -105,59 +105,77 @@ else:
         
         /* Alert Boxes - Ensure Text Contrast */
         .stAlert div {
-            color: #172B4D !important;
+            color: #000000 !important;
         }
 
-        /* File Uploader - High Contrast (Gray BG, White Text) */
+        /* File Uploader - Light Theme (Clean White/Gray) */
         [data-testid="stFileUploader"] {
-            background-color: #262730 !important;
+            background-color: #FFFFFF !important;
             padding: 10px;
             border-radius: 8px;
+            border: 1px dashed #A0A0A0;
         }
         [data-testid="stFileUploader"] section {
-            background-color: #262730 !important;
+            background-color: #FFFFFF !important;
         }
         [data-testid="stFileUploader"] div, 
         [data-testid="stFileUploader"] span, 
-        [data-testid="stFileUploader"] small {
-            color: #FAFAFA !important;
+        [data-testid="stFileUploader"] small,
+        [data-testid="stFileUploader"] label {
+            color: #000000 !important;
         }
         [data-testid="stFileUploader"] button {
-            color: #FAFAFA !important;
-            background-color: #4A4C54 !important;
-            border: 1px solid #60626A !important;
+            color: #000000 !important;
+            background-color: #FFFFFF !important;
+            border: 1px solid #D1D5DB !important;
+        }
+        [data-testid="stFileUploader"] button:hover {
+             background-color: #F0F2F6 !important;
+             border-color: #000000 !important;
         }
 
         /* Universal Button Fix (Download, Submit, etc.) */
         button {
-            color: #172B4D !important;
+            color: #000000 !important;
         }
         .stButton > button, .stDownloadButton > button {
-            color: #172B4D !important;
+            color: #000000 !important;
             background-color: #FFFFFF !important;
-            border: 1px solid #DFE1E6 !important;
+            border: 1px solid #D1D5DB !important;
+            font-weight: 500 !important;
         }
         
         /* Hover Effects for Buttons */
-        [data-testid="stFileUploader"] button:hover,
         .stButton > button:hover,
         .stDownloadButton > button:hover {
-            border-color: #172B4D !important;
+            border-color: #000000 !important;
             background-color: #F0F2F6 !important;
-            color: #172B4D !important;
+            color: #000000 !important;
         }
 
-        /* Fix DataFrame Toolbar and Header */
+        /* Primary Button Style (e.g. Run Reconciliation) */
+        button[data-testid="baseButton-primary"] {
+            background-color: #091E42 !important;
+            color: #FFFFFF !important;
+            border: 1px solid #091E42 !important;
+        }
+        button[data-testid="baseButton-primary"]:hover {
+             background-color: #000000 !important;
+             border-color: #000000 !important;
+        }
+
+        /* Fix DataFrame Toolbar and Header - Light Mode */
         [data-testid="stDataFrame"] {
-            background-color: #262730 !important;
+            background-color: #FFFFFF !important;
+            border: 1px solid #E5E7EB;
         }
         [data-testid="stDataFrame"] div {
-            color: #FFFFFF !important;
+            color: #000000 !important;
         }
         
         /* Streamlit Toolbar (Top Right) */
         [data-testid="stToolbar"] {
-            color: #172B4D !important;
+            color: #000000 !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -588,19 +606,16 @@ if accounting_file and budget_file:
                                     if part: unique_types.add(part)
                         
                         filter_opts = ["All"] + sorted(list(unique_types))
-                        selected_filter = st.selectbox("🔍 Filter by Mismatch Type:", filter_opts)
+                        selected_filter = st.selectbox("🔍 Filter by Mismatch Type:", filter_opts, key="mismatch_filter_select")
 
                         if selected_filter != "All":
                             # Filter rows where Status contains the selected type
-                            # Use explicit list splitting to ensure exact category matching
-                            def has_selected_status(val):
-                                if not isinstance(val, str): return False
-                                # Normalize and split
-                                parts = [p.strip() for p in val.split(',')]
-                                return selected_filter in parts
-
-                            df_mismatch = df_mismatch[df_mismatch['Status'].apply(has_selected_status)]
-                            st.caption(f"Showing {len(df_mismatch)} rows with **{selected_filter}**")
+                            # Using str.contains is robust and handles the "contains" logic naturally
+                            # (e.g., selecting "Amount Mismatch" matches "Amount Mismatch, Payee Mismatch")
+                            mask_filter = df_mismatch['Status'].astype(str).str.contains(selected_filter, regex=False, case=False)
+                            df_mismatch = df_mismatch[mask_filter]
+                            
+                            st.caption(f"Showing {len(df_mismatch)} rows matching **{selected_filter}**")
 
                     st.dataframe(
                         df_mismatch[detailed_display_cols]
