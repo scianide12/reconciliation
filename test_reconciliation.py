@@ -81,7 +81,7 @@ class TestReconciliationApp(unittest.TestCase):
         # 2. Check Status
         # 001: Matched
         row_001 = merged[merged['Clean_ORS'] == '001'].iloc[0]
-        self.assertEqual(row_001['Status'], 'Matched')
+        self.assertEqual(row_001['Status'], 'Fully Matched')
         
         # 002: Amount Mismatch (200 vs 250)
         row_002 = merged[merged['Clean_ORS'] == '002'].iloc[0]
@@ -95,14 +95,10 @@ class TestReconciliationApp(unittest.TestCase):
         row_004 = merged[merged['Clean_ORS'] == '004'].iloc[0]
         self.assertEqual(row_004['Status'], 'Missing in Accounting')
         
-        # 005: Data Mismatch ('E' vs 'Different')
+        # 005: Data Mismatch (Payee: E vs Different)
         row_005 = merged[merged['Clean_ORS'] == '005'].iloc[0]
-        self.assertEqual(row_005['Status'], 'Data Mismatch')
-        self.assertTrue(row_005['Has_Data_Mismatch'])
-        
-        # 006: Amount & Data Mismatch
-        # Create a new row manually or just assume it works? Better to add to the dataframe.
-        
+        self.assertEqual(row_005['Status'], 'Payee Mismatch')
+
     def test_reconcile_combined_mismatch(self):
         # Specific test for combined mismatch
         df_acc = pd.DataFrame({
@@ -121,7 +117,7 @@ class TestReconciliationApp(unittest.TestCase):
         merged = reconcile_data(df_acc, df_bud, 'ORS', 'ORS No.', 'Amount', 'Amount', cols_to_compare)
         
         self.assertEqual(len(merged), 1)
-        self.assertEqual(merged.iloc[0]['Status'], 'Amount & Data Mismatch')
+        self.assertEqual(merged.iloc[0]['Status'], 'Amount Mismatch, Payee Mismatch')
 
 
 if __name__ == '__main__':

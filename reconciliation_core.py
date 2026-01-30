@@ -79,6 +79,10 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
         # 1. Preprocessing (Vectorized)
         df = df.copy()
         
+        # Add metadata columns
+        df['__SOURCE_SHEET'] = sheet_name
+        df['__ORIG_IDX'] = df.index
+
         # Standardize ORS
         ors_col = key_cols[sheet_name]
         amt_col = value_cols.get(sheet_name)
@@ -124,8 +128,10 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
             df['__Amount'] = df['__Amount'].round(2)
         else:
             df['__Amount'] = 0.0
+        
+        processed_dfs.append(df)
 
-        # 2. Match Logic: Two-Pass Approach
+    # 2. Match Logic: Two-Pass Approach
     
     # PASS 1: Strict Match (ORS + Amount)
     # This handles duplicates correctly and finds perfect matches

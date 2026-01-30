@@ -417,24 +417,25 @@ if accounting_file and budget_file:
 
         st.divider()
         
+        # --- SESSION STATE MANAGEMENT ---
+        # Initialize session state for reconciliation results if not present
+        if 'reconciliation_result' not in st.session_state:
+            st.session_state.reconciliation_result = None
+            st.session_state.acc_unique_ors = 0
+            st.session_state.bud_unique_ors = 0
+            st.session_state.has_run = False
+
+        # Run Reconciliation Button
         if st.button("Run Reconciliation", type="primary"):
-            st.header("3. Results")
+            st.session_state.has_run = True
             
             # Use selected amount columns (or None if skipped)
             final_acc_amt_col = acc_amt_col if acc_amt_col != "-- None --" else None
             final_bud_amt_col = bud_amt_col if bud_amt_col != "-- None --" else None
 
-            # Overview Section
-            st.subheader("📊 Dataset Overview")
-            c_ov1, c_ov2 = st.columns(2)
-            
             # Calculate unique ORS counts
-            acc_unique_ors = df_acc[acc_ors_col].nunique()
-            bud_unique_ors = df_bud[bud_ors_col].nunique()
-            
-            c_ov1.metric("Total Accounting Records (Unique ORS)", f"{acc_unique_ors:,}", help=f"Unique ORS numbers found in {len(df_acc):,} total rows")
-            c_ov2.metric("Total Budget Records (Unique ORS)", f"{bud_unique_ors:,}", help=f"Unique ORS numbers found in {len(df_bud):,} total rows")
-            st.divider()
+            st.session_state.acc_unique_ors = df_acc[acc_ors_col].nunique()
+            st.session_state.bud_unique_ors = df_bud[bud_ors_col].nunique()
 
             try:
                 with st.spinner("Processing reconciliation..."):
@@ -448,10 +449,33 @@ if accounting_file and budget_file:
                             final_bud_amt_col, 
                             cols_to_compare
                         )
+                        st.session_state.reconciliation_result = merged
                     except Exception as e:
                         st.error(f"Error during reconciliation: {str(e)}")
+                        st.session_state.reconciliation_result = None
+                        st.session_state.has_run = False
                         st.stop()
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {e}")
+                st.session_state.reconciliation_result = None
+                st.session_state.has_run = False
 
+        # --- RESULTS DISPLAY ---
+        # Check if results exist in session state
+        if st.session_state.has_run and st.session_state.reconciliation_result is not None:
+            st.header("3. Results")
+            
+            merged = st.session_state.reconciliation_result
+
+            # Overview Section
+            st.subheader("📊 Dataset Overview")
+            c_ov1, c_ov2 = st.columns(2)
+            
+            c_ov1.metric("Total Accounting Records (Unique ORS)", f"{st.session_state.acc_unique_ors:,}")
+            c_ov2.metric("Total Budget Records (Unique ORS)", f"{st.session_state.bud_unique_ors:,}")
+            st.divider()
+
+            try:
                 # Summary Metrics
                 # Updated to handle dynamic Status strings (e.g., "Payee Mismatch", "Amount Mismatch, Payee Mismatch")
                 
@@ -552,29 +576,30 @@ if accounting_file and budget_file:
 
                     if not df_mismatch.empty:
                         # --- Interactive Filtering ---
-                        # Extract all unique mismatch types for the filter
+                        # Extract all unique mismatch types for the filter (from Status column)
                         unique_types = set()
                         
-                        def parse_reasons(val):
-                            if isinstance(val, list): return val
-                            if isinstance(val, str): return val.split(', ')
-                            return []
-
-                        if 'Mismatch_Reasons' in df_mismatch.columns:
-                            for reasons in df_mismatch['Mismatch_Reasons'].apply(parse_reasons):
-                                for r in reasons:
-                                    unique_types.add(r)
+                        if 'Status' in df_mismatch.columns:
+                            # Split status strings by ", " to get individual categories
+                            # e.g. "Amount Mismatch, Payee Mismatch" -> ["Amount Mismatch", "Payee Mismatch"]
+                            for status_str in df_mismatch['Status'].dropna().astype(str):
+                                parts = [p.strip() for p in status_str.split(',')]
+                                for part in parts:
+                                    if part: unique_types.add(part)
                         
                         filter_opts = ["All"] + sorted(list(unique_types))
                         selected_filter = st.selectbox("🔍 Filter by Mismatch Type:", filter_opts)
 
                         if selected_filter != "All":
-                            # Filter rows where Status/Reasons contain the selected type
-                            def has_type(val):
-                                reasons = parse_reasons(val)
-                                return selected_filter in reasons
-                                
-                            df_mismatch = df_mismatch[df_mismatch['Mismatch_Reasons'].apply(has_type)]
+                            # Filter rows where Status contains the selected type
+                            # Use explicit list splitting to ensure exact category matching
+                            def has_selected_status(val):
+                                if not isinstance(val, str): return False
+                                # Normalize and split
+                                parts = [p.strip() for p in val.split(',')]
+                                return selected_filter in parts
+
+                            df_mismatch = df_mismatch[df_mismatch['Status'].apply(has_selected_status)]
                             st.caption(f"Showing {len(df_mismatch)} rows with **{selected_filter}**")
 
                     st.dataframe(
