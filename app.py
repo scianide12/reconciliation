@@ -52,130 +52,144 @@ else:
     # Force Light Mode CSS (Day Mode - "Clean Slate" Professional Theme)
     st.markdown("""
     <style>
-        /* Force Streamlit Theme Variables for Light Mode */
-        :root {
-            --primary-color: #091E42;
-            --background-color: #FFFFFF;
-            --secondary-background-color: #F7F9FC;
-            --text-color: #000000;
-            --font: sans-serif;
+        /* --- DAY MODE (Aligned to Design Prompt) --- */
+        
+        /* GLOBAL TYPOGRAPHY */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        
+        html, body, [class*="css"] {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
         }
 
-        /* Main App Background - Clean White */
+        /* 1. Main Background & Text */
         .stApp {
-            background-color: #FFFFFF;
-            color: #000000; /* Pure Black for Maximum Readability */
+            background-color: #F9FAFB; /* Soft off-white (Gray 50) */
+            color: #374151; /* Gray 700 - High contrast but not harsh */
         }
         
-        /* Force Text Colors for All Elements */
-        p, div, span, label, h1, h2, h3, h4, h5, h6, .stMarkdown, .stText {
-            color: #000000 !important;
+        /* 2. Text Hierarchy */
+        h1, h2, h3 {
+            color: #111827 !important; /* Gray 900 - Near Black */
+            font-weight: 600;
+        }
+        h4, h5, h6 {
+            color: #1F2937 !important; /* Gray 800 */
+            font-weight: 500;
+        }
+        p, li, label, .stMarkdown, .stText {
+            color: #374151 !important; /* Gray 700 - Reduced eye strain */
+            line-height: 1.6; /* Comfortable reading spacing */
+        }
+        small, .stCaption {
+            color: #6B7280 !important; /* Gray 500 - Secondary text */
         }
 
-        /* Sidebar Background - Cool Light Gray */
+        /* 3. Sidebar - Distinct but subtle */
         [data-testid="stSidebar"] {
-            background-color: #F7F9FC;
-            border-right: 1px solid #D1D5DB;
+            background-color: #F3F4F6; /* Gray 100 */
+            border-right: 1px solid #E5E7EB; /* Gray 200 */
         }
-        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-             color: #000000 !important;
-        }
-
-        /* Input Fields - White Background, Dark Text, Subtle Border */
-        .stTextInput > div > div > input,
-        .stSelectbox > div > div > div,
-        .stNumberInput > div > div > input {
-            color: #000000 !important;
-            background-color: #FFFFFF !important;
-            border: 1px solid #D1D5DB;
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, 
+        [data-testid="stSidebar"] .stMarkdown {
+             color: #1F2937 !important;
         }
         
-        /* Fix Dropdown Menu Options Visibility */
-        ul[data-testid="stSelectboxVirtualDropdown"] {
-            background-color: #FFFFFF !important;
-        }
-        ul[data-testid="stSelectboxVirtualDropdown"] li {
-            color: #000000 !important;
-            background-color: #FFFFFF !important;
-        }
-        /* Hover state for options */
-        ul[data-testid="stSelectboxVirtualDropdown"] li:hover {
-            background-color: #F0F2F6 !important;
-        }
-        
-        /* Alert Boxes - Ensure Text Contrast */
-        .stAlert div {
-            color: #000000 !important;
-        }
-
-        /* File Uploader - Light Theme (Clean White/Gray) */
-        [data-testid="stFileUploader"] {
-            background-color: #FFFFFF !important;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px dashed #A0A0A0;
-        }
-        [data-testid="stFileUploader"] section {
-            background-color: #FFFFFF !important;
-        }
-        [data-testid="stFileUploader"] div, 
-        [data-testid="stFileUploader"] span, 
-        [data-testid="stFileUploader"] small,
-        [data-testid="stFileUploader"] label {
-            color: #000000 !important;
-        }
-        [data-testid="stFileUploader"] button {
-            color: #000000 !important;
-            background-color: #FFFFFF !important;
-            border: 1px solid #D1D5DB !important;
-        }
-        [data-testid="stFileUploader"] button:hover {
-             background-color: #F0F2F6 !important;
-             border-color: #000000 !important;
-        }
-
-        /* Universal Button Fix (Download, Submit, etc.) */
-        button {
-            color: #000000 !important;
-        }
-        .stButton > button, .stDownloadButton > button {
-            color: #000000 !important;
-            background-color: #FFFFFF !important;
-            border: 1px solid #D1D5DB !important;
-            font-weight: 500 !important;
-        }
-        
-        /* Hover Effects for Buttons */
-        .stButton > button:hover,
-        .stDownloadButton > button:hover {
-            border-color: #000000 !important;
-            background-color: #F0F2F6 !important;
-            color: #000000 !important;
-        }
-
-        /* Primary Button Style (e.g. Run Reconciliation) */
-        button[data-testid="baseButton-primary"] {
-            background-color: #091E42 !important;
-            color: #FFFFFF !important;
-            border: 1px solid #091E42 !important;
-        }
-        button[data-testid="baseButton-primary"]:hover {
-             background-color: #000000 !important;
-             border-color: #000000 !important;
-        }
-
-        /* Fix DataFrame Toolbar and Header - Light Mode */
+        /* 4. Cards & Containers (DataFrames) */
         [data-testid="stDataFrame"] {
+            background-color: #F8F9FA !important; /* Very Light Gray */
+            border: 1px solid #E5E7EB;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* Soft shadow */
+            padding: 2px;
+        }
+        [data-testid="stDataFrame"] div, [data-testid="stDataFrame"] span {
+            color: #000000 !important; /* Pure Black */
+        }
+
+        /* 5. Toolbar (Clean & Minimal) */
+        [data-testid="stElementToolbar"] {
             background-color: #FFFFFF !important;
             border: 1px solid #E5E7EB;
+            border-radius: 6px;
+            color: #374151 !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
-        [data-testid="stDataFrame"] div {
-            color: #000000 !important;
+        [data-testid="stElementToolbar"] svg {
+            fill: #6B7280 !important; /* Gray 500 */
         }
-        
-        /* Streamlit Toolbar (Top Right) */
-        [data-testid="stToolbar"] {
-            color: #000000 !important;
+        [data-testid="stElementToolbar"]:hover {
+            background-color: #F9FAFB !important;
+        }
+        [data-testid="stElementToolbar"]:hover svg {
+            fill: #111827 !important; /* Darker on hover */
+        }
+
+        /* 6. Inputs (Selectbox, Text Input) */
+        .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
+            background-color: #FFFFFF !important;
+            color: #111827 !important;
+            border: 1px solid #D1D5DB !important; /* Gray 300 */
+            border-radius: 6px;
+        }
+        .stTextInput input:focus, .stSelectbox div[data-baseweb="select"] > div:focus-within {
+             border-color: #6366F1 !important; /* Indigo 500 - Subtle Accent */
+             box-shadow: 0 0 0 1px #6366F1 !important;
+        }
+
+        /* 7. Dropdown Menu Options */
+        ul[data-testid="stSelectboxVirtualDropdown"] {
+            background-color: #FFFFFF !important;
+            border: 1px solid #E5E7EB;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border-radius: 6px;
+        }
+        ul[data-testid="stSelectboxVirtualDropdown"] li {
+            color: #374151 !important;
+        }
+        ul[data-testid="stSelectboxVirtualDropdown"] li:hover {
+            background-color: #F3F4F6 !important;
+        }
+
+        /* 8. File Uploader - "Surface" Style */
+        [data-testid="stFileUploader"] {
+            background-color: #FFFFFF;
+            border: 1px dashed #D1D5DB; /* Gray 300 */
+            padding: 16px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+        [data-testid="stFileUploader"]:hover {
+            border-color: #9CA3AF; /* Gray 400 */
+            background-color: #F9FAFB;
+        }
+        [data-testid="stFileUploader"] div, [data-testid="stFileUploader"] span, [data-testid="stFileUploader"] small {
+            color: #4B5563 !important; /* Gray 600 */
+        }
+
+        /* 9. Buttons - Soft & Professional */
+        button:not([data-testid="baseButton-primary"]) {
+            background-color: #FFFFFF !important;
+            color: #374151 !important;
+            border: 1px solid #D1D5DB !important;
+            border-radius: 6px;
+            font-weight: 500;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            transition: all 0.15s ease;
+        }
+        button:not([data-testid="baseButton-primary"]):hover {
+            background-color: #F9FAFB !important;
+            border-color: #9CA3AF !important;
+            color: #111827 !important;
+            box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        /* 10. Tooltips */
+        div[role="tooltip"] {
+            background-color: #FFFFFF !important;
+            color: #1F2937 !important;
+            border: 1px solid #E5E7EB !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border-radius: 6px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -313,7 +327,7 @@ if accounting_file and budget_file:
         st.info("We've auto-detected the key column (ORS) to perform the matching. Please map Amount and other columns in the section below.")
 
         # Heuristics for auto-selection
-        ors_keywords = ['ors', 'obligation', 'ref', 'reference', 'control']
+        ors_keywords = ['ors', 'obligation', 'ref', 'reference', 'control', 'mfo', 'pap']
         amt_keywords = ['gross', 'amount', 'amt', 'total', 'cost', 'net']
 
         c1, c2 = st.columns(2)

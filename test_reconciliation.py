@@ -1,9 +1,19 @@
 import unittest
 import pandas as pd
 import numpy as np
-from reconciliation_core import clean_currency, find_best_match, reconcile_data
+from reconciliation_core import clean_currency, find_best_match, reconcile_data, clean_id
 
 class TestReconciliationApp(unittest.TestCase):
+
+    def test_clean_id(self):
+        # Test ID cleaning logic (Text/Float artifacts)
+        self.assertEqual(clean_id(123), "123")
+        self.assertEqual(clean_id(123.0), "123")
+        self.assertEqual(clean_id("123"), "123")
+        self.assertEqual(clean_id("123.0"), "123")
+        self.assertEqual(clean_id("  123  "), "123")
+        self.assertEqual(clean_id(None), "")
+        self.assertEqual(clean_id(np.nan), "")
 
     def test_clean_currency(self):
         # Test cleaning various currency formats
@@ -98,6 +108,26 @@ class TestReconciliationApp(unittest.TestCase):
         # 005: Data Mismatch (Payee: E vs Different)
         row_005 = merged[merged['Clean_ORS'] == '005'].iloc[0]
         self.assertEqual(row_005['Status'], 'Payee Mismatch')
+
+    def test_reconcile_mixed_types(self):
+        # Case: Accounting has MFO as int (123), Budget has MFO as float (123.0)
+        df_acc = pd.DataFrame({'MFO': [123, 456], 'Amount': [100.0, 200.0]})
+        df_bud = pd.DataFrame({'MFO': [123.0, 456.0], 'Amount': [100.0, 200.0]})
+        
+        result = reconcile_data(df_acc, df_bud, 'MFO', 'MFO', 'Amount', 'Amount', [])
+        
+        # Both should match perfectly
+        self.assertEqual(len(result), 2)
+        self.assertTrue(all(result['Status'] == 'Fully Matched'))
+        self.assertEqual(result.iloc[0]['Clean_ORS'], '123')
+        
+        # Case: Text vs Number
+        df_acc_2 = pd.DataFrame({'MFO': ["123", "456"], 'Amount': [100.0, 200.0]})
+        df_bud_2 = pd.DataFrame({'MFO': [123.0, 456.0], 'Amount': [100.0, 200.0]})
+        
+        result_2 = reconcile_data(df_acc_2, df_bud_2, 'MFO', 'MFO', 'Amount', 'Amount', [])
+        self.assertEqual(len(result_2), 2)
+        self.assertTrue(all(result_2['Status'] == 'Fully Matched'))
 
     def test_reconcile_combined_mismatch(self):
         # Specific test for combined mismatch

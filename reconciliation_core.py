@@ -41,6 +41,21 @@ def clean_currency(x):
     except:
         return 0.0
 
+def clean_id(x):
+    """
+    Standardizes ID columns (like ORS, MFO) to text:
+    - Converts to string
+    - Strips whitespace
+    - Removes trailing '.0' (Excel float artifact)
+    """
+    if pd.isnull(x):
+        return ""
+    s = str(x).strip()
+    # Handle Excel float-as-text artifacts: "1234.0" -> "1234"
+    if s.endswith('.0'):
+        return s[:-2]
+    return s
+
 def normalize_col(col_name):
     return str(col_name).lower().strip().replace('_', '').replace(' ', '')
 
@@ -87,8 +102,10 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
         ors_col = key_cols[sheet_name]
         amt_col = value_cols.get(sheet_name)
         
-        # Vectorized string operation
-        df['__ORS'] = df[ors_col].astype(str).str.strip()
+        # Vectorized string operation with ID cleaning
+        # Treat as Text: Convert to string, strip, remove '.0' float artifact
+        s = df[ors_col].astype(str).str.strip()
+        df['__ORS'] = np.where(s.str.endswith('.0'), s.str[:-2], s)
         
         # Filter invalid ORS (vectorized)
         # Check for column header artifacts (where value == column name)
@@ -258,8 +275,15 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
             if col_L not in merged.columns: merged[col_L] = np.nan
             if col_R not in merged.columns: merged[col_R] = np.nan
             
-            val_L = merged[col_L].astype(str).str.strip().str.lower()
-            val_R = merged[col_R].astype(str).str.strip().str.lower()
+            # Clean and normalize Left (treat as text, handle float artifacts)
+            s_L = merged[col_L].astype(str).str.strip()
+            s_L = np.where(s_L.str.endswith('.0'), s_L.str[:-2], s_L)
+            val_L = pd.Series(s_L).str.lower()
+            
+            # Clean and normalize Right
+            s_R = merged[col_R].astype(str).str.strip()
+            s_R = np.where(s_R.str.endswith('.0'), s_R.str[:-2], s_R)
+            val_R = pd.Series(s_R).str.lower()
             
             # Compare
             # Treat 'nan' as empty string for comparison or strictly?
@@ -319,8 +343,9 @@ def reconcile_data(df_acc, df_bud, acc_ors_col, bud_ors_col, acc_amt_col, bud_am
     df_acc_clean = df_acc.copy()
     df_bud_clean = df_bud.copy()
     
-    df_acc_clean['Clean_ORS'] = df_acc_clean[acc_ors_col].astype(str).str.strip()
-    df_bud_clean['Clean_ORS'] = df_bud_clean[bud_ors_col].astype(str).str.strip()
+    # Use clean_id to handle text/number artifacts consistently
+    df_acc_clean['Clean_ORS'] = df_acc_clean[acc_ors_col].apply(clean_id)
+    df_bud_clean['Clean_ORS'] = df_bud_clean[bud_ors_col].apply(clean_id)
     
     if acc_amt_col:
         df_acc_clean['Clean_Amount'] = df_acc_clean[acc_amt_col].apply(clean_currency)
