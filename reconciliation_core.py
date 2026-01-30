@@ -155,7 +155,9 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
     for df in processed_dfs:
         # Multiply by 100, round, convert to int, then to string. Safe and fast.
         amt_int = (df['__Amount'] * 100).round().astype(int).astype(str)
-        df['__MATCH_KEY_STRICT'] = df['__ORS'] + '_' + amt_int
+        base_key = df['__ORS'] + '_' + amt_int
+        # Add cumcount to handle duplicates 1-to-1
+        df['__MATCH_KEY_STRICT'] = base_key + '_' + df.groupby(base_key).cumcount().astype(str)
         
     combined_strict = pd.concat(processed_dfs, ignore_index=True)
     
@@ -201,17 +203,13 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
         
         # CRITICAL: Only allow match if ORS is UNIQUE in this residual set?
         # User said: "The ORS match-for UNIQUE ORS"
-        # We will filter for uniqueness later or now?
-        # If we just merge on ORS, we might get cartesian products for duplicates.
-        # We should only keep rows where ORS is unique in this residual DF.
+        # However, to handle duplicate ORS residuals (e.g., 2 mismatches on same ORS),
+        # we can use the same cumcount strategy as Pass 1 to align them 1-to-1.
+        # This is better than leaving them as "Missing" when they clearly exist in both.
         
-        ors_counts = res_df['__ORS'].value_counts()
-        unique_ors = ors_counts[ors_counts == 1].index
-        res_df_unique = res_df[res_df['__ORS'].isin(unique_ors)]
-        
-        # We also define the match key as just ORS
-        res_df_unique['__MATCH_KEY_LOOSE'] = res_df_unique['__ORS']
-        residuals.append(res_df_unique)
+        # Add cumcount to handle duplicates 1-to-1 in residuals
+        res_df['__MATCH_KEY_LOOSE'] = res_df['__ORS'] + '_' + res_df.groupby('__ORS').cumcount().astype(str)
+        residuals.append(res_df)
         
     combined_loose = pd.concat(residuals, ignore_index=True)
     merged_loose = pd.DataFrame()
@@ -311,10 +309,61 @@ def reconcile_data(df_acc, df_bud, acc_ors_col, bud_ors_col, acc_amt_col, bud_am
     """
     Wrapper for backward compatibility with app.py using the new high-performance engine.
     """
-    # 1. Prepare Inputs
+    # 0. Data Cleaning Strategy: Drop rows with blank values in mapped columns
+    dropped_rows = []
+    
+    def get_blank_mask(df, cols):
+        mask = pd.Series(False, index=df.index)
+        for c in cols:
+            if c and c in df.columns:
+                c_null = df[c].isna()
+                if pd.api.types.is_string_dtype(df[c]) or pd.api.types.is_object_dtype(df[c]):
+                    not_null = df[c].notna()
+                    is_blank_str = pd.Series(False, index=df.index)
+                    # Safe conversion to string and check for empty
+                    is_blank_str[not_null] = df.loc[not_null, c].astype(str).str.strip() == ''
+                    mask |= (c_null | is_blank_str)
+                else:
+                    mask |= c_null
+        return mask
+
+    # Filter Accounting
+    acc_check_cols = [acc_ors_col]
+    if acc_amt_col: acc_check_cols.append(acc_amt_col)
+    if cols_to_compare:
+        acc_check_cols.extend([m['acc_col'] for m in cols_to_compare])
+        
+    mask_acc = get_blank_mask(df_acc, acc_check_cols)
+    dropped_acc = df_acc[mask_acc].copy()
+    if not dropped_acc.empty:
+        dropped_acc['Source'] = 'Accounting'
+        dropped_rows.append(dropped_acc)
+    
+    df_acc_filtered = df_acc[~mask_acc].copy()
+    
+    # Filter Budget
+    bud_check_cols = [bud_ors_col]
+    if bud_amt_col: bud_check_cols.append(bud_amt_col)
+    if cols_to_compare:
+        bud_check_cols.extend([m['bud_col'] for m in cols_to_compare])
+        
+    mask_bud = get_blank_mask(df_bud, bud_check_cols)
+    dropped_bud = df_bud[mask_bud].copy()
+    if not dropped_bud.empty:
+        dropped_bud['Source'] = 'Budget'
+        dropped_rows.append(dropped_bud)
+    
+    df_bud_filtered = df_bud[~mask_bud].copy()
+    
+    if dropped_rows:
+        df_dropped = pd.concat(dropped_rows, ignore_index=True)
+    else:
+        df_dropped = pd.DataFrame()
+
+    # 1. Prepare Inputs (Use Filtered Data)
     dfs = {
-        'Accounting': df_acc,
-        'Budget': df_bud
+        'Accounting': df_acc_filtered,
+        'Budget': df_bud_filtered
     }
     key_cols = {
         'Accounting': acc_ors_col,
@@ -339,9 +388,9 @@ def reconcile_data(df_acc, df_bud, acc_ors_col, bud_ors_col, acc_amt_col, bud_am
         matched_acc_ids = set(merged_core['__ORIG_IDX_L'])
         matched_bud_ids = set(merged_core['__ORIG_IDX_R'])
     
-    # Pre-calculate Clean columns for reporting on full dataset
-    df_acc_clean = df_acc.copy()
-    df_bud_clean = df_bud.copy()
+    # Pre-calculate Clean columns for reporting on full dataset (Use Filtered Data)
+    df_acc_clean = df_acc_filtered.copy()
+    df_bud_clean = df_bud_filtered.copy()
     
     # Use clean_id to handle text/number artifacts consistently
     df_acc_clean['Clean_ORS'] = df_acc_clean[acc_ors_col].apply(clean_id)
@@ -460,4 +509,4 @@ def reconcile_data(df_acc, df_bud, acc_ors_col, bud_ors_col, acc_amt_col, bud_am
         res['Mismatch_Reasons'] = ""
         results.append(res)
         
-    return pd.DataFrame(results)
+    return pd.DataFrame(results), df_dropped

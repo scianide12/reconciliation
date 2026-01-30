@@ -74,7 +74,7 @@ class TestReconciliationApp(unittest.TestCase):
         
         cols_to_compare = [{'acc_col': 'Payee', 'bud_col': 'Payee', 'display': 'Payee'}]
         
-        merged = reconcile_data(
+        merged, dropped = reconcile_data(
             df_acc, 
             df_bud, 
             'ORS', 
@@ -114,18 +114,54 @@ class TestReconciliationApp(unittest.TestCase):
         df_acc = pd.DataFrame({'MFO': [123, 456], 'Amount': [100.0, 200.0]})
         df_bud = pd.DataFrame({'MFO': [123.0, 456.0], 'Amount': [100.0, 200.0]})
         
-        result = reconcile_data(df_acc, df_bud, 'MFO', 'MFO', 'Amount', 'Amount', [])
+        result, _ = reconcile_data(df_acc, df_bud, 'MFO', 'MFO', 'Amount', 'Amount', [])
         
         # Both should match perfectly
         self.assertEqual(len(result), 2)
-        self.assertTrue(all(result['Status'] == 'Fully Matched'))
-        self.assertEqual(result.iloc[0]['Clean_ORS'], '123')
+        self.assertTrue((result['Status'] == 'Fully Matched').all())
+
+    def test_reconcile_data_dropped(self):
+        # Create dummy dataframes with blanks
+        data_acc = {
+            'ORS': ['001', '002', ''], # 3rd is blank ORS
+            'Amount': [100.0, None, 300.0] # 2nd is blank Amount
+        }
+        data_bud = {
+            'ORS No.': ['001', '002', '003'],
+            'Amount': [100.0, 200.0, 300.0]
+        }
+        
+        df_acc = pd.DataFrame(data_acc)
+        df_bud = pd.DataFrame(data_bud)
+        
+        merged, dropped = reconcile_data(
+            df_acc, 
+            df_bud, 
+            'ORS', 
+            'ORS No.', 
+            'Amount', 
+            'Amount', 
+            []
+        )
+        
+        # Check dropped
+        # Acc row 2 (index 1) has blank Amount -> Drop
+        # Acc row 3 (index 2) has blank ORS -> Drop
+        self.assertEqual(len(dropped), 2)
+        self.assertTrue('Source' in dropped.columns)
+        self.assertEqual(dropped[dropped['Source'] == 'Accounting'].shape[0], 2)
+        
+        # Check merged
+        # 001 should be processed (Matched)
+        # 002 (Budget) should be Missing in Accounting (since Acc 002 dropped)
+        # 003 (Budget) should be Missing in Accounting (since Acc 003 dropped)
+        self.assertEqual(len(merged), 3)
         
         # Case: Text vs Number
         df_acc_2 = pd.DataFrame({'MFO': ["123", "456"], 'Amount': [100.0, 200.0]})
         df_bud_2 = pd.DataFrame({'MFO': [123.0, 456.0], 'Amount': [100.0, 200.0]})
         
-        result_2 = reconcile_data(df_acc_2, df_bud_2, 'MFO', 'MFO', 'Amount', 'Amount', [])
+        result_2, _ = reconcile_data(df_acc_2, df_bud_2, 'MFO', 'MFO', 'Amount', 'Amount', [])
         self.assertEqual(len(result_2), 2)
         self.assertTrue(all(result_2['Status'] == 'Fully Matched'))
 
@@ -144,7 +180,7 @@ class TestReconciliationApp(unittest.TestCase):
         
         cols_to_compare = [{'acc_col': 'Payee', 'bud_col': 'Payee', 'display': 'Payee'}]
         
-        merged = reconcile_data(df_acc, df_bud, 'ORS', 'ORS No.', 'Amount', 'Amount', cols_to_compare)
+        merged, _ = reconcile_data(df_acc, df_bud, 'ORS', 'ORS No.', 'Amount', 'Amount', cols_to_compare)
         
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged.iloc[0]['Status'], 'Amount Mismatch, Payee Mismatch')

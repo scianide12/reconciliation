@@ -18,7 +18,7 @@ class TestDuplicateORS(unittest.TestCase):
         df_acc = pd.DataFrame({'ORS': ['100', '100'], 'Amount': [50.0, 50.0]})
         df_bud = pd.DataFrame({'ORS': ['100', '100'], 'Amount': [50.0, 50.0]})
         
-        result = reconcile_data(df_acc, df_bud, 'ORS', 'ORS', 'Amount', 'Amount', [])
+        result, _ = reconcile_data(df_acc, df_bud, 'ORS', 'ORS', 'Amount', 'Amount', [])
         
         print(result[['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD', 'Status']])
         
@@ -36,7 +36,7 @@ class TestDuplicateORS(unittest.TestCase):
         df_acc = pd.DataFrame({'ORS': ['100', '100'], 'Amount': [50.0, 100.0]})
         df_bud = pd.DataFrame({'ORS': ['100', '100'], 'Amount': [100.0, 50.0]})
         
-        result = reconcile_data(df_acc, df_bud, 'ORS', 'ORS', 'Amount', 'Amount', [])
+        result, _ = reconcile_data(df_acc, df_bud, 'ORS', 'ORS', 'Amount', 'Amount', [])
         
         print(result[['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD', 'Status']])
         
@@ -57,7 +57,7 @@ class TestDuplicateORS(unittest.TestCase):
         df_acc = pd.DataFrame({'ORS': ['100', '100', '100'], 'Amount': [10.0, 20.0, 30.0]})
         df_bud = pd.DataFrame({'ORS': ['100', '100'], 'Amount': [10.0, 20.0]})
         
-        result = reconcile_data(df_acc, df_bud, 'ORS', 'ORS', 'Amount', 'Amount', [])
+        result, _ = reconcile_data(df_acc, df_bud, 'ORS', 'ORS', 'Amount', 'Amount', [])
         
         print(result[['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD', 'Status']])
         
@@ -79,7 +79,7 @@ class TestDuplicateORS(unittest.TestCase):
         df_acc = pd.DataFrame({'ORS': ['100', '100'], 'Amount': [50.0, 50.0]})
         df_bud = pd.DataFrame({'ORS': ['100', '100'], 'Amount': [60.0, 70.0]})
         
-        result = reconcile_data(df_acc, df_bud, 'ORS', 'ORS', 'Amount', 'Amount', [])
+        result, _ = reconcile_data(df_acc, df_bud, 'ORS', 'ORS', 'Amount', 'Amount', [])
         
         print(result[['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD', 'Status']])
         

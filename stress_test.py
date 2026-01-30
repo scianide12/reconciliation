@@ -85,7 +85,7 @@ def run_stress_test():
     cols_to_compare = [{'acc_col': 'Payee', 'bud_col': 'Payee', 'display': 'Payee'}]
     
     try:
-        merged = reconcile_data(
+        merged, _ = reconcile_data(
             df_acc_read, 
             df_bud_read, 
             'ORS Number', 

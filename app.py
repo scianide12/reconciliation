@@ -453,6 +453,7 @@ if accounting_file and budget_file:
         # Initialize session state for reconciliation results if not present
         if 'reconciliation_result' not in st.session_state:
             st.session_state.reconciliation_result = None
+            st.session_state.dropped_records = None
             st.session_state.acc_unique_ors = 0
             st.session_state.bud_unique_ors = 0
             st.session_state.has_run = False
@@ -472,7 +473,7 @@ if accounting_file and budget_file:
             try:
                 with st.spinner("Processing reconciliation..."):
                     try:
-                        merged = reconcile_data(
+                        merged, dropped = reconcile_data(
                             df_acc, 
                             df_bud, 
                             acc_ors_col, 
@@ -482,6 +483,7 @@ if accounting_file and budget_file:
                             cols_to_compare
                         )
                         st.session_state.reconciliation_result = merged
+                        st.session_state.dropped_records = dropped
                     except Exception as e:
                         st.error(f"Error during reconciliation: {str(e)}")
                         st.session_state.reconciliation_result = None
@@ -501,10 +503,14 @@ if accounting_file and budget_file:
 
             # Overview Section
             st.subheader("📊 Dataset Overview")
-            c_ov1, c_ov2 = st.columns(2)
+            c_ov1, c_ov2, c_ov3 = st.columns(3)
             
             c_ov1.metric("Total Accounting Records (Unique ORS)", f"{st.session_state.acc_unique_ors:,}")
             c_ov2.metric("Total Budget Records (Unique ORS)", f"{st.session_state.bud_unique_ors:,}")
+            
+            dropped_count = len(st.session_state.dropped_records) if st.session_state.dropped_records is not None else 0
+            c_ov3.metric("Dropped (Blank Data)", f"{dropped_count:,}", help="Rows excluded due to blank values in mapped columns")
+            
             st.divider()
 
             try:
@@ -570,7 +576,7 @@ if accounting_file and budget_file:
                 
                 def get_filtered_columns(df, include_reasons=False):
                     # We use Clean_ORS as the unified Primary Key
-                    cols = ['Clean_ORS']
+                    cols = ['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD']
                     
                     # Add Mismatch Reasons only if requested and exists
                     if include_reasons and 'Mismatch_Reasons' in df.columns:
@@ -583,11 +589,18 @@ if accounting_file and budget_file:
                     # Filter to keep only existing columns
                     return [c for c in cols if c in df.columns]
 
-                # Base columns (ORS only)
+                # Base columns (ORS + Amounts)
                 basic_display_cols = get_filtered_columns(merged, include_reasons=False)
-                # Detailed columns (ORS + Reasons + Status)
+                # Detailed columns (ORS + Amounts + Reasons + Status)
                 detailed_display_cols = get_filtered_columns(merged, include_reasons=True)
                 
+                # Column Renaming Map
+                col_rename_map = {
+                    'Clean_ORS': 'ORS Number',
+                    'Clean_Amount_ACC': 'Amount (Accounting)',
+                    'Clean_Amount_BUD': 'Amount (Budget)'
+                }
+
                 # Detailed Views
                 st.subheader("Detailed Breakdown")
                 
@@ -598,7 +611,7 @@ if accounting_file and budget_file:
                     # Rename for display
                     st.dataframe(
                         merged[mask_fully_matched][basic_display_cols]
-                        .rename(columns={'Clean_ORS': 'ORS Number'})
+                        .rename(columns=col_rename_map)
                     )
                 
                 with tabs[1]:
@@ -633,7 +646,7 @@ if accounting_file and budget_file:
 
                     st.dataframe(
                         df_mismatch[detailed_display_cols]
-                        .rename(columns={'Clean_ORS': 'ORS Number'})
+                        .rename(columns=col_rename_map)
                     )
                 
                 with tabs[2]:
@@ -641,7 +654,7 @@ if accounting_file and budget_file:
                     st.caption("Records present in Budget but missing in Accounting")
                     st.dataframe(
                         merged[mask_missing_acc][basic_display_cols]
-                        .rename(columns={'Clean_ORS': 'ORS Number'})
+                        .rename(columns=col_rename_map)
                     )
                     
                 with tabs[3]:
@@ -649,7 +662,7 @@ if accounting_file and budget_file:
                     st.caption("Records present in Accounting but missing in Budget")
                     st.dataframe(
                         merged[mask_missing_bud][basic_display_cols]
-                        .rename(columns={'Clean_ORS': 'ORS Number'})
+                        .rename(columns=col_rename_map)
                     )
 
                 # Download Report
@@ -661,13 +674,13 @@ if accounting_file and budget_file:
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         # Helper to prepare full dataset (excluding internal columns)
                         def get_full_export_df(df):
-                            # User Request: Only ORS, Mismatch_Reasons, and Status
-                            target_cols = ['Clean_ORS', 'Mismatch_Reasons', 'Status']
+                            # User Request: ORS, Amounts, Mismatch_Reasons, and Status
+                            target_cols = ['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD', 'Mismatch_Reasons', 'Status']
                             
                             # Filter to existing columns
                             final_cols = [c for c in target_cols if c in df.columns]
                             
-                            return df[final_cols].rename(columns={'Clean_ORS': 'ORS Number'})
+                            return df[final_cols].rename(columns=col_rename_map)
 
                         # Helper to write sheet
                         def write_sheet(df, sheet_name, include_all_cols=False):
@@ -676,9 +689,9 @@ if accounting_file and budget_file:
                                     # Use full dataset for detailed review
                                     export_df = get_full_export_df(df)
                                 else:
-                                    # Use basic simplified view (ORS only)
-                                    cols = ['Clean_ORS']
-                                    export_df = df[cols].rename(columns={'Clean_ORS': 'ORS Number'})
+                                    # Use basic simplified view (ORS + Amounts)
+                                    cols = ['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD']
+                                    export_df = df[cols].rename(columns=col_rename_map)
                                 
                                 export_df.to_excel(writer, index=False, sheet_name=sheet_name)
 
@@ -694,6 +707,10 @@ if accounting_file and budget_file:
                         # Missing
                         write_sheet(merged[mask_missing_bud], 'Missing in Budget', include_all_cols=True)
                         write_sheet(merged[mask_missing_acc], 'Missing in Accounting', include_all_cols=True)
+                        
+                        # Dropped Records (Blank Data)
+                        if st.session_state.dropped_records is not None and not st.session_state.dropped_records.empty:
+                            st.session_state.dropped_records.to_excel(writer, index=False, sheet_name='Dropped - Blank Entries')
                         
                 except Exception as e:
                     st.error(f"Error generating Excel report: {str(e)}")

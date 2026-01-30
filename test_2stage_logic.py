@@ -34,7 +34,7 @@ print("-" * 30)
 # We map 'Details' to 'Details' to check row integrity
 cols_to_compare = [{'acc_col': 'Details', 'bud_col': 'Details', 'norm': 'details'}]
 
-result = reconcile_data(
+result, _ = reconcile_data(
     df_acc, 
     df_bud, 
     acc_ors_col='ORS', 
@@ -52,7 +52,7 @@ print(result[columns_to_show])
 print("\n--- VERIFICATION ---")
 # Check 1: The $50 pair should be "Matched"
 match_row = result[(result['Clean_ORS'] == '100') & (result['Clean_Amount_ACC'] == 50.0)]
-if not match_row.empty and match_row.iloc[0]['Status'] == 'Matched':
+if not match_row.empty and match_row.iloc[0]['Status'] == 'Fully Matched':
     print("✅ CHECK 1 PASS: Perfect match found (ORS 100, $50).")
 else:
     print("❌ CHECK 1 FAIL: Perfect match not handled correctly.")
