@@ -149,7 +149,7 @@ class TestReconciliationApp(unittest.TestCase):
         # Acc row 3 (index 2) has blank ORS -> Drop
         self.assertEqual(len(dropped), 2)
         self.assertTrue('Source' in dropped.columns)
-        self.assertEqual(dropped[dropped['Source'] == 'Accounting'].shape[0], 2)
+        self.assertEqual(dropped[dropped['Source'] == '(Acc)'].shape[0], 2)
         
         # Check merged
         # 001 should be processed (Matched)
@@ -164,6 +164,120 @@ class TestReconciliationApp(unittest.TestCase):
         result_2, _ = reconcile_data(df_acc_2, df_bud_2, 'MFO', 'MFO', 'Amount', 'Amount', [])
         self.assertEqual(len(result_2), 2)
         self.assertTrue(all(result_2['Status'] == 'Fully Matched'))
+
+    def test_reconcile_zero_dropped_refined(self):
+        # Refined Logic:
+        # Amount Column: Drop 0, 0.0, Blank
+        # Other Columns: Drop Blank (Keep 0)
+        
+        data_acc = {
+            'ORS': ['001', '002', '003', '004', '005'],
+            'Amount': [
+                0,           # Numeric zero -> Drop
+                100.0,       # Valid -> Check other cols
+                100.0,       # Valid
+                100.0,       # Valid
+                100.0        # Valid
+            ],
+            'Ref': [
+                'A',         # Valid
+                '',          # Empty -> Drop
+                '0',         # "0" String -> Keep (User said only Amount 0 drops)
+                0,           # 0 Numeric -> Keep (User said only Amount 0 drops)
+                'B'          # Valid
+            ]
+        }
+        
+        # Budget side (simple)
+        data_bud = {
+            'ORS No.': ['005'],
+            'Amount': [100.0]
+        }
+        
+        df_acc = pd.DataFrame(data_acc)
+        df_bud = pd.DataFrame(data_bud)
+        
+        # Mapping: ORS, Amount, Ref (as mapped col)
+        cols_to_compare = [{'acc_col': 'Ref', 'bud_col': 'ORS No.', 'display': 'Ref'}] # Dummy mapping
+        
+        merged, dropped = reconcile_data(
+            df_acc, 
+            df_bud, 
+            'ORS', 
+            'ORS No.', 
+            'Amount', 
+            'Amount', 
+            cols_to_compare
+        )
+        
+        # Expected Drops:
+        # 001: Amount is 0 -> Drop
+        # 002: Ref is '' -> Drop
+        # 003: Ref is '0' -> Keep
+        # 004: Ref is 0 -> Keep
+        # 005: Valid -> Keep
+        
+        # Dropped: 001, 002
+        self.assertEqual(len(dropped), 2)
+        dropped_ors = dropped[dropped['Source'] == '(Acc)']['ORS'].tolist()
+        self.assertCountEqual(dropped_ors, ['001', '002'])
+        
+        # Verify 'Source' is the first column
+        self.assertEqual(dropped.columns[0], 'Source')
+        
+        # Kept: 003, 004, 005
+        # 005 matches Budget (Fully Matched)
+        # 003, 004 (Missing in Budget)
+        self.assertEqual(len(merged), 3) 
+        merged_ors = merged['Clean_ORS'].tolist()
+        self.assertCountEqual(merged_ors, ['003', '004', '005'])
+
+    def test_reconcile_duplicates_swapped_order(self):
+        # Scenario: ORS and Amount are identical (duplicates), but "Payee" differs.
+        # We want to see if the engine pairs them intelligently or just by order.
+        
+        # Accounting: A -> Payee X, B -> Payee Y
+        data_acc = {
+            'ORS': ['001', '001'],
+            'Amount': [100.0, 100.0],
+            'Payee': ['Payee X', 'Payee Y']
+        }
+        
+        # Budget: A -> Payee Y, B -> Payee X (Swapped Order)
+        data_bud = {
+            'ORS No.': ['001', '001'],
+            'Amount': [100.0, 100.0],
+            'Payee': ['Payee Y', 'Payee X']
+        }
+        
+        df_acc = pd.DataFrame(data_acc)
+        df_bud = pd.DataFrame(data_bud)
+        
+        cols_to_compare = [{'acc_col': 'Payee', 'bud_col': 'Payee', 'display': 'Payee'}]
+        
+        merged, _ = reconcile_data(
+            df_acc, 
+            df_bud, 
+            'ORS', 
+            'ORS No.', 
+            'Amount', 
+            'Amount', 
+            cols_to_compare
+        )
+        
+        # Current Logic Prediction:
+        # It matches Acc[0] (Payee X) with Bud[0] (Payee Y) -> Mismatch
+        # It matches Acc[1] (Payee Y) with Bud[1] (Payee X) -> Mismatch
+        # Because it uses simple cumcount (0 with 0, 1 with 1)
+        
+        print("\n--- Duplicate Swap Test Results ---")
+        # Note: Columns are suffixed _ACC and _BUD by reconcile_data
+        print(merged[['Clean_ORS', 'Payee_ACC', 'Payee_BUD', 'Status']])
+        
+        # Smart Matching Check:
+        # The engine should now sort by Payee before matching, so X matches X and Y matches Y.
+        is_fully_matched = (merged['Status'] == 'Fully Matched').all()
+        self.assertTrue(is_fully_matched, "Expected Smart Sorting to align duplicates correctly")
 
     def test_reconcile_combined_mismatch(self):
         # Specific test for combined mismatch

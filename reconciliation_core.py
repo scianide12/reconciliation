@@ -146,6 +146,44 @@ def reconcile_optimized(dfs_dict, key_cols, value_cols, mapping_dict):
         else:
             df['__Amount'] = 0.0
         
+        # Sort by relevant columns to ensure deterministic pairing of duplicates (Smart Matching)
+        # We only need to sort by: Key + Amount + Mapped Columns
+        # Sorting by ALL columns is wasteful and risky for mixed types.
+        
+        sort_cols = ['__ORS', '__Amount']
+        
+        # Add mapped columns if they exist in this sheet
+        if mapping_dict:
+            # We don't know if this is "Accounting" or "Budget" here easily without passing more info.
+            # However, we can check which mapped columns exist in df.
+            # Mapped cols are 'acc_col' or 'bud_col'.
+            
+            # Extract all potential column names from mapping
+            potential_cols = set()
+            for m in mapping_dict:
+                if 'acc_col' in m: potential_cols.add(m['acc_col'])
+                if 'bud_col' in m: potential_cols.add(m['bud_col'])
+            
+            # Intersect with df columns
+            # We filter for columns that exist and are NOT the key/amount columns (to avoid dups)
+            valid_mapped = [c for c in df.columns if c in potential_cols and c not in [ors_col, amt_col]]
+            sort_cols.extend(sorted(valid_mapped))
+        
+        # Fallback: if no mapped columns, the original order (index) is preserved by stable sort usually?
+        # Pandas sort is not stable by default unless kind='mergesort'.
+        # But we want deterministic behavior for duplicates.
+        # If we have strict duplicates (Same ORS, Same Amt, Same Mapped Cols), then it TRULY doesn't matter.
+        
+        try:
+            df = df.sort_values(by=sort_cols)
+        except TypeError:
+            # Fallback for mixed types: convert to string for sorting
+            # This is slower but safe.
+            temp_sort_col = df[sort_cols].astype(str).sum(axis=1)
+            df['__TEMP_SORT'] = temp_sort_col
+            df = df.sort_values(by=['__TEMP_SORT'])
+            df.drop(columns=['__TEMP_SORT'], inplace=True)
+            
         processed_dfs.append(df)
 
     # 2. Match Logic: Two-Pass Approach
@@ -312,51 +350,79 @@ def reconcile_data(df_acc, df_bud, acc_ors_col, bud_ors_col, acc_amt_col, bud_am
     # 0. Data Cleaning Strategy: Drop rows with blank values in mapped columns
     dropped_rows = []
     
-    def get_blank_mask(df, cols):
+    def get_blank_mask(df, cols, check_zero=False):
         mask = pd.Series(False, index=df.index)
         for c in cols:
             if c and c in df.columns:
+                # 1. Check for NaN
                 c_null = df[c].isna()
+                mask |= c_null
+                
+                # 2. String/Object checks (Empty & Zero)
                 if pd.api.types.is_string_dtype(df[c]) or pd.api.types.is_object_dtype(df[c]):
                     not_null = df[c].notna()
-                    is_blank_str = pd.Series(False, index=df.index)
-                    # Safe conversion to string and check for empty
-                    is_blank_str[not_null] = df.loc[not_null, c].astype(str).str.strip() == ''
-                    mask |= (c_null | is_blank_str)
-                else:
-                    mask |= c_null
+                    s = df.loc[not_null, c].astype(str).str.strip()
+                    
+                    # A. Check for empty strings (Always check)
+                    is_empty = s == ''
+                    mask.loc[not_null] |= is_empty
+                    
+                    if check_zero:
+                        # B. Check for Zero (0, 0.0, 0.00, -0, etc.)
+                        # Strip currency symbols
+                        s_clean = s.str.replace(r'[$,]', '', regex=True)
+                        vals_numeric = pd.to_numeric(s_clean, errors='coerce')
+                        is_zero_numeric = (vals_numeric == 0).fillna(False)
+                        mask.loc[not_null] |= is_zero_numeric
+                
+                # 3. Numeric Zero (Only if check_zero is True)
+                if check_zero and pd.api.types.is_numeric_dtype(df[c]):
+                    is_zero = df[c] == 0
+                    mask |= is_zero
+                    
         return mask
 
     # Filter Accounting
-    acc_check_cols = [acc_ors_col]
-    if acc_amt_col: acc_check_cols.append(acc_amt_col)
+    # Group 1: Amount Column (Check for 0 and Blanks)
+    acc_zero_cols = [acc_amt_col] if acc_amt_col else []
+    
+    # Group 2: Other Mapped Columns (Check for Blanks only)
+    acc_blank_cols = [acc_ors_col]
     if cols_to_compare:
-        acc_check_cols.extend([m['acc_col'] for m in cols_to_compare])
+        acc_blank_cols.extend([m['acc_col'] for m in cols_to_compare])
         
-    mask_acc = get_blank_mask(df_acc, acc_check_cols)
+    mask_acc = get_blank_mask(df_acc, acc_zero_cols, check_zero=True) | get_blank_mask(df_acc, acc_blank_cols, check_zero=False)
+    
     dropped_acc = df_acc[mask_acc].copy()
     if not dropped_acc.empty:
-        dropped_acc['Source'] = 'Accounting'
+        dropped_acc['Source'] = '(Acc)'
         dropped_rows.append(dropped_acc)
     
     df_acc_filtered = df_acc[~mask_acc].copy()
     
     # Filter Budget
-    bud_check_cols = [bud_ors_col]
-    if bud_amt_col: bud_check_cols.append(bud_amt_col)
+    # Group 1: Amount Column (Check for 0 and Blanks)
+    bud_zero_cols = [bud_amt_col] if bud_amt_col else []
+    
+    # Group 2: Other Mapped Columns (Check for Blanks only)
+    bud_blank_cols = [bud_ors_col]
     if cols_to_compare:
-        bud_check_cols.extend([m['bud_col'] for m in cols_to_compare])
+        bud_blank_cols.extend([m['bud_col'] for m in cols_to_compare])
         
-    mask_bud = get_blank_mask(df_bud, bud_check_cols)
+    mask_bud = get_blank_mask(df_bud, bud_zero_cols, check_zero=True) | get_blank_mask(df_bud, bud_blank_cols, check_zero=False)
+    
     dropped_bud = df_bud[mask_bud].copy()
     if not dropped_bud.empty:
-        dropped_bud['Source'] = 'Budget'
+        dropped_bud['Source'] = '(Bud)'
         dropped_rows.append(dropped_bud)
     
     df_bud_filtered = df_bud[~mask_bud].copy()
     
     if dropped_rows:
         df_dropped = pd.concat(dropped_rows, ignore_index=True)
+        # Reorder columns to put 'Source' first for better visibility
+        cols = ['Source'] + [c for c in df_dropped.columns if c != 'Source']
+        df_dropped = df_dropped[cols]
     else:
         df_dropped = pd.DataFrame()
 

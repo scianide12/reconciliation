@@ -609,8 +609,8 @@ if accounting_file and budget_file:
                 # Detailed Views
                 st.subheader("Detailed Breakdown")
                 
-                # Consolidated Tabs: Fully Matched | Data Mismatches | Missing in Accounting | Missing in Budget
-                tabs = st.tabs(["✅ Fully Matched", "⚠️ Data Mismatches", "❌ Missing in Accounting", "❌ Missing in Budget"])
+                # Consolidated Tabs: Fully Matched | Data Mismatches | Missing in Accounting | Missing in Budget | Dropped Records
+                tabs = st.tabs(["✅ Fully Matched", "⚠️ Data Mismatches", "❌ Missing in Accounting", "❌ Missing in Budget", "🗑️ Dropped Records"])
                 
                 with tabs[0]:
                     # Rename for display
@@ -669,6 +669,14 @@ if accounting_file and budget_file:
                         merged[mask_missing_bud][basic_display_cols]
                         .rename(columns=col_rename_map)
                     )
+
+                with tabs[4]:
+                    # Dropped Records
+                    st.caption("Records excluded due to Zero Amount or Blank Data in mapped columns")
+                    if st.session_state.dropped_records is not None and not st.session_state.dropped_records.empty:
+                        st.dataframe(st.session_state.dropped_records)
+                    else:
+                        st.info("No records were dropped.")
 
                 # Download Report
                 st.divider()
