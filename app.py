@@ -614,8 +614,10 @@ if accounting_file and budget_file:
                 
                 with tabs[0]:
                     # Rename for display
+                    # User Request: Remove Amount(Accounting) and Amount(Budget)
+                    cols_fully_matched = [c for c in basic_display_cols if c not in ['Clean_Amount_ACC', 'Clean_Amount_BUD']]
                     st.dataframe(
-                        merged[mask_fully_matched][basic_display_cols]
+                        merged[mask_fully_matched][cols_fully_matched]
                         .rename(columns=col_rename_map)
                     )
                 
@@ -623,6 +625,9 @@ if accounting_file and budget_file:
                     st.caption("Records where ORS matches but Amount or Data differs")
                     
                     df_mismatch = merged[mask_data_mismatch]
+
+                    # User Request: Remove Amount(Accounting) and Amount(Budget)
+                    cols_mismatch = [c for c in detailed_display_cols if c not in ['Clean_Amount_ACC', 'Clean_Amount_BUD']]
 
                     if not df_mismatch.empty:
                         # --- Interactive Filtering ---
@@ -650,23 +655,27 @@ if accounting_file and budget_file:
                             st.caption(f"Showing {len(df_mismatch)} rows matching **{selected_filter}**")
 
                     st.dataframe(
-                        df_mismatch[detailed_display_cols]
+                        df_mismatch[cols_mismatch]
                         .rename(columns=col_rename_map)
                     )
                 
                 with tabs[2]:
                     # Missing in Accounting
                     st.caption("Records present in Budget but missing in Accounting")
+                    # User Request: Remove Amount(Accounting)
+                    cols_missing_acc = [c for c in basic_display_cols if c != 'Clean_Amount_ACC']
                     st.dataframe(
-                        merged[mask_missing_acc][basic_display_cols]
+                        merged[mask_missing_acc][cols_missing_acc]
                         .rename(columns=col_rename_map)
                     )
                     
                 with tabs[3]:
                     # Missing in Budget
                     st.caption("Records present in Accounting but missing in Budget")
+                    # User Request: Remove Amount(Budget)
+                    cols_missing_bud = [c for c in basic_display_cols if c != 'Clean_Amount_BUD']
                     st.dataframe(
-                        merged[mask_missing_bud][basic_display_cols]
+                        merged[mask_missing_bud][cols_missing_bud]
                         .rename(columns=col_rename_map)
                     )
 
@@ -685,41 +694,38 @@ if accounting_file and budget_file:
                 output = io.BytesIO()
                 try:
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        # Helper to prepare full dataset (excluding internal columns)
-                        def get_full_export_df(df):
-                            # User Request: ORS, Amounts, Mismatch_Reasons, and Status
-                            target_cols = ['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD', 'Mismatch_Reasons', 'Status']
-                            
-                            # Filter to existing columns
-                            final_cols = [c for c in target_cols if c in df.columns]
-                            
-                            return df[final_cols].rename(columns=col_rename_map)
-
-                        # Helper to write sheet
-                        def write_sheet(df, sheet_name, include_all_cols=False):
+                        # Helper to write sheet with specific columns
+                        def write_sheet(df, sheet_name, columns):
                             if not df.empty:
-                                if include_all_cols:
-                                    # Use full dataset for detailed review
-                                    export_df = get_full_export_df(df)
-                                else:
-                                    # Use basic simplified view (ORS + Amounts)
-                                    cols = ['Clean_ORS', 'Clean_Amount_ACC', 'Clean_Amount_BUD']
-                                    export_df = df[cols].rename(columns=col_rename_map)
-                                
+                                # Filter to existing columns
+                                final_cols = [c for c in columns if c in df.columns]
+                                export_df = df[final_cols].rename(columns=col_rename_map)
                                 export_df.to_excel(writer, index=False, sheet_name=sheet_name)
 
-                        # Full Reconciliation (Detailed - All Cols)
-                        write_sheet(merged, 'Full Reconciliation', include_all_cols=True)
+                        # 1. Full Reconciliation (Keep all columns for reference)
+                        # User Request: Remove both "Amount(Accounting)" and "Amount(Budget)"
+                        full_cols = ['Clean_ORS', 'Mismatch_Reasons', 'Status']
+                        write_sheet(merged, 'Full Reconciliation', full_cols)
                         
-                        # Fully Matched
-                        write_sheet(merged[mask_fully_matched], 'Fully Matched', include_all_cols=False)
+                        # 2. Fully Matched (Remove Amounts)
+                        # User Request: Remove both "Amount(Accounting)" and "Amount(Budget)"
+                        cols_fully_matched = ['Clean_ORS']
+                        write_sheet(merged[mask_fully_matched], 'Fully Matched', cols_fully_matched)
                         
-                        # Data Mismatches (Consolidated)
-                        write_sheet(merged[mask_data_mismatch], 'Data Mismatches', include_all_cols=True)
+                        # 3. Data Mismatches (Remove Amounts)
+                        # User Request: Remove both "Amount(Accounting)" and "Amount(Budget)"
+                        cols_mismatch = ['Clean_ORS', 'Mismatch_Reasons', 'Status']
+                        write_sheet(merged[mask_data_mismatch], 'Data Mismatches', cols_mismatch)
                         
-                        # Missing
-                        write_sheet(merged[mask_missing_bud], 'Missing in Budget', include_all_cols=True)
-                        write_sheet(merged[mask_missing_acc], 'Missing in Accounting', include_all_cols=True)
+                        # 4. Missing in Budget (Remove Amount(Budget))
+                        # User Request: Keep "Amount(Accounting)" (since it exists), Remove "Amount(Budget)" (missing/zero)
+                        cols_missing_bud = ['Clean_ORS', 'Clean_Amount_ACC']
+                        write_sheet(merged[mask_missing_bud], 'Missing in Budget', cols_missing_bud)
+                        
+                        # 5. Missing in Accounting (Remove Amount(Accounting))
+                        # User Request: Keep "Amount(Budget)" (since it exists), Remove "Amount(Accounting)" (missing/zero)
+                        cols_missing_acc = ['Clean_ORS', 'Clean_Amount_BUD']
+                        write_sheet(merged[mask_missing_acc], 'Missing in Accounting', cols_missing_acc)
                         
                         # Dropped Records (Blank Data)
                         if st.session_state.dropped_records is not None and not st.session_state.dropped_records.empty:
