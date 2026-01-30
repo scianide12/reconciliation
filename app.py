@@ -473,7 +473,7 @@ if accounting_file and budget_file:
             try:
                 with st.spinner("Processing reconciliation..."):
                     try:
-                        merged, dropped = reconcile_data(
+                        temp_result = reconcile_data(
                             df_acc, 
                             df_bud, 
                             acc_ors_col, 
@@ -482,10 +482,15 @@ if accounting_file and budget_file:
                             final_bud_amt_col, 
                             cols_to_compare
                         )
+                        # st.write(f"Debug: Returned {len(temp_result)} values") 
+                        merged, dropped = temp_result
+                        
                         st.session_state.reconciliation_result = merged
                         st.session_state.dropped_records = dropped
                     except Exception as e:
+                        import traceback
                         st.error(f"Error during reconciliation: {str(e)}")
+                        st.code(traceback.format_exc())
                         st.session_state.reconciliation_result = None
                         st.session_state.has_run = False
                         st.stop()
