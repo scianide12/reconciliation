@@ -108,27 +108,26 @@ else:
             color: #172B4D !important;
         }
 
-        /* File Uploader Fix - Ensure Dropzone Text is Readable */
+        /* File Uploader - High Contrast (Gray BG, White Text) */
+        [data-testid="stFileUploader"] {
+            background-color: #262730 !important;
+            padding: 10px;
+            border-radius: 8px;
+        }
         [data-testid="stFileUploader"] section {
-            background-color: #F7F9FC; /* Light gray dropzone */
-            border: 1px dashed #DFE1E6;
+            background-color: #262730 !important;
         }
-        /* Target the main text "Drag and drop file here" */
-        [data-testid="stFileUploader"] section span, 
-        [data-testid="stFileUploader"] section div {
-            color: #172B4D !important;
-        }
-        /* Target the small text "Limit 200MB per file..." */
+        [data-testid="stFileUploader"] div, 
+        [data-testid="stFileUploader"] span, 
         [data-testid="stFileUploader"] small {
-            color: #5E6C84 !important;
+            color: #FAFAFA !important;
         }
-        /* Ensure button text is readable */
         [data-testid="stFileUploader"] button {
-            color: #172B4D !important;
-            border-color: #DFE1E6 !important;
-            background-color: #FFFFFF !important; /* Force White Background */
+            color: #FAFAFA !important;
+            background-color: #4A4C54 !important;
+            border: 1px solid #60626A !important;
         }
-        
+
         /* Universal Button Fix (Download, Submit, etc.) */
         button {
             color: #172B4D !important;
@@ -187,12 +186,12 @@ st.sidebar.caption("Supported formats: .xlsx, .xls, .csv, .xlsm, .xlsb")
 uploaded_acc = st.sidebar.file_uploader(
     "Accounting File", 
     type=["xlsx", "xls", "csv", "xlsm", "xlsb"], 
-    key="acc_file_v3"
+    key="acc_file_v5"
 )
 uploaded_bud = st.sidebar.file_uploader(
     "Budget File", 
     type=["xlsx", "xls", "csv", "xlsm", "xlsb"], 
-    key="bud_file_v3"
+    key="bud_file_v5"
 )
 
 # Local Files Section
@@ -246,7 +245,12 @@ def load_data(file):
             return pd.read_excel(file, engine="xlrd")
         except Exception:
             if hasattr(file, 'seek'): file.seek(0)
-            return pd.read_excel(file, engine="calamine")
+            try:
+                return pd.read_excel(file, engine="calamine")
+            except:
+                # Fallback to default (let pandas decide)
+                if hasattr(file, 'seek'): file.seek(0)
+                return pd.read_excel(file)
 
     # 3. Strict .xlsx handling (Use openpyxl ONLY)
     if filename.endswith(('.xlsx', '.xlsm', '.xltx', '.xltm')):
@@ -254,10 +258,19 @@ def load_data(file):
             return pd.read_excel(file, engine="openpyxl")
         except Exception:
             if hasattr(file, 'seek'): file.seek(0)
-            return pd.read_excel(file, engine="calamine")
+            try:
+                return pd.read_excel(file, engine="calamine")
+            except:
+                # Fallback to default
+                if hasattr(file, 'seek'): file.seek(0)
+                return pd.read_excel(file)
 
     # 4. Fallback for unknown extensions
-    return pd.read_excel(file, engine="calamine") 
+    try:
+        return pd.read_excel(file, engine="calamine") 
+    except:
+        if hasattr(file, 'seek'): file.seek(0)
+        return pd.read_excel(file) 
 
 if accounting_file and budget_file:
     st.divider()
@@ -446,12 +459,10 @@ if accounting_file and budget_file:
                 mask_missing_bud = merged['Status'] == 'Missing in Budget'
                 mask_missing_acc = merged['Status'] == 'Missing in Accounting'
                 
-                # Check for Amount Mismatch (substring search)
-                mask_amt_mismatch = merged['Status'].str.contains('Amount Mismatch', case=False, na=False)
-                
-                # Check for Data Mismatch (using the boolean flag from core)
-                # Note: 'Has_Data_Mismatch' is TRUE for both Amount and Text mismatches
-                mask_data_mismatch = merged['Has_Data_Mismatch']
+                # Consolidated Mismatch Mask
+                # Any row that is NOT Fully Matched and NOT Missing is considered a "Data Mismatch"
+                # This covers: "Amount Mismatch", "Payee Mismatch", "Amount Mismatch, Payee Mismatch", etc.
+                mask_data_mismatch = ~(mask_fully_matched | mask_missing_bud | mask_missing_acc)
                 
                 # Metric Rows
                 row1_cols = st.columns(3)
@@ -459,23 +470,30 @@ if accounting_file and budget_file:
                 row1_cols[1].metric("❌ Missing in Budget", int(mask_missing_bud.sum()))
                 row1_cols[2].metric("❌ Missing in Accounting", int(mask_missing_acc.sum()))
 
-                # Consolidated Mismatch Metric (includes Amount & Data)
+                # Consolidated Mismatch Metric
                 row2_cols = st.columns(1)
-                row2_cols[0].metric("⚠️ Data Mismatch", int(mask_data_mismatch.sum()), help="Includes both Amount and Text (e.g., Payee) mismatches")
+                row2_cols[0].metric("⚠️ Data Mismatch", int(mask_data_mismatch.sum()), help="Includes ORS matches with differences in Amount or Text (e.g., Payee)")
 
                 # --- High-Level Mismatch Drivers (Dashboard) ---
                 if mask_data_mismatch.any():
-                    # Get all rows with ANY mismatch (excluding missing)
-                    all_mismatch_mask = mask_data_mismatch
-                    all_mismatch_df = merged[all_mismatch_mask]
+                    # Get all rows with ANY mismatch
+                    all_mismatch_df = merged[mask_data_mismatch]
                     
-                    if not all_mismatch_df.empty:
+                    if not all_mismatch_df.empty and 'Mismatch_Reasons' in all_mismatch_df.columns:
                         total_counts = {}
-                        for reasons in all_mismatch_df['Data_Mismatches']:
+                        
+                        # Helper to parse reasons safely
+                        def parse_reasons(val):
+                            if isinstance(val, list): return val
+                            if isinstance(val, str): return val.split(', ')
+                            return []
+
+                        for reasons in all_mismatch_df['Mismatch_Reasons'].apply(parse_reasons):
                             for r in reasons:
-                                if "Amount:" in r: continue # Skip amount reasons here, focus on data columns
-                                col = r.split(':')[0]
-                                total_counts[col] = total_counts.get(col, 0) + 1
+                                # Count specific mismatch types
+                                if "Mismatch" in r:
+                                    col = r.replace(" Mismatch", "")
+                                    total_counts[col] = total_counts.get(col, 0) + 1
                         
                         if total_counts:
                             st.info("💡 **Where are the mismatches happening?**")
@@ -483,11 +501,12 @@ if accounting_file and budget_file:
                             sorted_reasons = sorted(total_counts.items(), key=lambda x: x[1], reverse=True)
                             
                             # Display as a horizontal list of pills/metrics
-                            m_cols = st.columns(len(sorted_reasons))
-                            for i, (col_name, count) in enumerate(sorted_reasons):
-                                # Use limited columns to avoid squeeze
-                                if i < 5:
-                                    m_cols[i].metric(f"Differs in {col_name}", count)
+                            num_metrics = min(len(sorted_reasons), 5)
+                            if num_metrics > 0:
+                                m_cols = st.columns(num_metrics)
+                                for i in range(num_metrics):
+                                    col_name, count = sorted_reasons[i]
+                                    m_cols[i].metric(f"{col_name}", count)
 
                 # Define the specific columns to show based on user request:
                 # Strictly: ORS Number (renamed from Clean_ORS)
@@ -500,100 +519,72 @@ if accounting_file and budget_file:
                     # Add Mismatch Reasons only if requested and exists
                     if include_reasons and 'Mismatch_Reasons' in df.columns:
                         cols.append('Mismatch_Reasons')
+                    
+                    # Add Status if requested
+                    if include_reasons and 'Status' in df.columns:
+                        cols.append('Status')
                         
                     # Filter to keep only existing columns
                     return [c for c in cols if c in df.columns]
 
                 # Base columns (ORS only)
                 basic_display_cols = get_filtered_columns(merged, include_reasons=False)
-                # Detailed columns (ORS + Reasons)
+                # Detailed columns (ORS + Reasons + Status)
                 detailed_display_cols = get_filtered_columns(merged, include_reasons=True)
                 
                 # Detailed Views
                 st.subheader("Detailed Breakdown")
                 
-                tabs = st.tabs(["✅ Fully Matched", "⚠️ Amount Issues", "⚠️ Data Issues", "❌ Missing"])
+                # Consolidated Tabs: Fully Matched | Data Mismatches | Missing
+                tabs = st.tabs(["✅ Fully Matched", "⚠️ Data Mismatches", "❌ Missing"])
                 
                 with tabs[0]:
                     # Rename for display
                     st.dataframe(
-                        merged[merged['Status'] == 'Fully Matched'][basic_display_cols]
+                        merged[mask_fully_matched][basic_display_cols]
                         .rename(columns={'Clean_ORS': 'ORS Number'})
                     )
                 
                 with tabs[1]:
-                    st.caption("Records with Amount differences")
-                    # Filter: Status contains "Amount Mismatch"
-                    mask = merged['Status'].str.contains('Amount Mismatch', case=False, na=False)
-                    st.dataframe(
-                        merged[mask][detailed_display_cols]
-                        .rename(columns={'Clean_ORS': 'ORS Number'})
-                    )
-                
-                with tabs[2]:
-                    st.caption("Records where Amounts match, but other columns differ")
-                    # Filter: Has Data Mismatch (boolean flag)
-                    # Note: This tab might overlap with Amount Issues if both mismatch, which is fine/helpful
-                    mask = merged['Has_Data_Mismatch']
-                    df_mismatch = merged[mask]
+                    st.caption("Records where ORS matches but Amount or Data differs")
+                    
+                    df_mismatch = merged[mask_data_mismatch]
 
-                    # --- Mismatch Breakdown ---
                     if not df_mismatch.empty:
-                        mismatch_counts = {}
-                        for reasons in df_mismatch['Data_Mismatches']:
-                            for r in reasons:
-                                if "Amount:" in r: 
-                                    continue
-                                # Extract column name (everything before the first colon)
-                                col = r.split(':')[0]
-                                mismatch_counts[col] = mismatch_counts.get(col, 0) + 1
+                        # --- Interactive Filtering ---
+                        # Extract all unique mismatch types for the filter
+                        unique_types = set()
                         
-                        if mismatch_counts:
-                            st.markdown("### 📉 Mismatch Breakdown")
-                            # Convert to DataFrame for nice display
-                            breakdown_df = pd.DataFrame(list(mismatch_counts.items()), columns=['Column', 'Count'])
-                            breakdown_df = breakdown_df.sort_values('Count', ascending=False)
-                            
-                            # Display as metrics
-                            # Cap at 4 columns to prevent layout issues
-                            num_cols = min(len(breakdown_df), 4)
-                            cols = st.columns(num_cols)
-                            
-                            for idx, row in breakdown_df.reset_index(drop=True).iterrows():
-                                # Prevent too many columns if many fields mismatch
-                                if idx < 4:
-                                    with cols[idx]:
-                                        st.metric(f"Differs in {row['Column']}", row['Count'])
-                                else:
-                                    # If more than 4, just show in text
-                                    if idx == 4: st.write("**Other Mismatches:**")
-                                    st.write(f"- {row['Column']}: {row['Count']}")
-                            
-                            st.divider()
+                        def parse_reasons(val):
+                            if isinstance(val, list): return val
+                            if isinstance(val, str): return val.split(', ')
+                            return []
 
-                            # --- Interactive Filtering ---
-                            filter_cols = ["All"] + list(mismatch_counts.keys())
-                            selected_filter = st.selectbox("🔍 Filter by Mismatch Type:", filter_cols)
+                        if 'Mismatch_Reasons' in df_mismatch.columns:
+                            for reasons in df_mismatch['Mismatch_Reasons'].apply(parse_reasons):
+                                for r in reasons:
+                                    unique_types.add(r)
+                        
+                        filter_opts = ["All"] + sorted(list(unique_types))
+                        selected_filter = st.selectbox("🔍 Filter by Mismatch Type:", filter_opts)
 
-                            if selected_filter != "All":
-                                # Filter rows where the Mismatch Reasons contain the selected column
-                                # We check if any of the reason strings start with "SelectedColumn:"
-                                def has_specific_mismatch(reasons):
-                                    for r in reasons:
-                                        if r.startswith(f"{selected_filter}:"):
-                                            return True
-                                    return False
+                        if selected_filter != "All":
+                            # Filter rows where Status/Reasons contain the selected type
+                            def has_type(val):
+                                reasons = parse_reasons(val)
+                                return selected_filter in reasons
                                 
-                                df_mismatch = df_mismatch[df_mismatch['Data_Mismatches'].apply(has_specific_mismatch)]
-                                st.caption(f"Showing {len(df_mismatch)} rows with mismatches in **{selected_filter}**")
+                            df_mismatch = df_mismatch[df_mismatch['Mismatch_Reasons'].apply(has_type)]
+                            st.caption(f"Showing {len(df_mismatch)} rows with **{selected_filter}**")
 
                     st.dataframe(
                         df_mismatch[detailed_display_cols]
                         .rename(columns={'Clean_ORS': 'ORS Number'})
                     )
                 
-                with tabs[3]:
-                    mask = merged['Status'].isin(['Missing in Budget', 'Missing in Accounting'])
+                with tabs[2]:
+                    # Missing (Budget or Accounting)
+                    mask = mask_missing_bud | mask_missing_acc
                     st.dataframe(
                         merged[mask][basic_display_cols]
                         .rename(columns={'Clean_ORS': 'ORS Number'})
@@ -611,7 +602,7 @@ if accounting_file and budget_file:
                             # User Request: Only ORS, Mismatch_Reasons, and Status
                             target_cols = ['Clean_ORS', 'Mismatch_Reasons', 'Status']
                             
-                            # Filter to existing columns (if Mismatch_Reasons is missing, it won't crash)
+                            # Filter to existing columns
                             final_cols = [c for c in target_cols if c in df.columns]
                             
                             return df[final_cols].rename(columns={'Clean_ORS': 'ORS Number'})
@@ -632,25 +623,16 @@ if accounting_file and budget_file:
                         # Full Reconciliation (Detailed - All Cols)
                         write_sheet(merged, 'Full Reconciliation', include_all_cols=True)
                         
-                        # Specialized sheets
-                        # Fully Matched -> Basic (User preference: Keep it simple?)
-                        # Actually, user said "A report where discrepancies are noted should be ALL include"
-                        # So Fully Matched can stay simple or be full. Let's keep it simple for now unless requested.
-                        write_sheet(merged[merged['Status'] == 'Fully Matched'], 'Fully Matched', include_all_cols=False)
+                        # Fully Matched
+                        write_sheet(merged[mask_fully_matched], 'Fully Matched', include_all_cols=False)
                         
-                        # Mismatches -> Detailed (All Cols)
-                        mismatch_mask = merged['Status'].isin(['Amount Mismatch', 'Data Mismatch', 'Amount & Data Mismatch'])
-                        write_sheet(merged[mismatch_mask], 'Mismatches', include_all_cols=True)
+                        # Data Mismatches (Consolidated)
+                        write_sheet(merged[mask_data_mismatch], 'Data Mismatches', include_all_cols=True)
                         
-                        # Missing -> Detailed (All Cols - to see what is missing)
-                        # User said "ALL include". Missing records have data from one side.
-                        write_sheet(merged[merged['Status'] == 'Missing in Budget'], 'Missing in Budget', include_all_cols=True)
-                        write_sheet(merged[merged['Status'] == 'Missing in Accounting'], 'Missing in Accounting', include_all_cols=True)
+                        # Missing
+                        write_sheet(merged[mask_missing_bud], 'Missing in Budget', include_all_cols=True)
+                        write_sheet(merged[mask_missing_acc], 'Missing in Accounting', include_all_cols=True)
                         
-                        # Unified Discrepancies Sheet (Optional, but helpful)
-                        discrepancy_mask = merged['Status'] != 'Fully Matched'
-                        write_sheet(merged[discrepancy_mask], 'All Discrepancies', include_all_cols=True)
-
                 except Exception as e:
                     st.error(f"Error generating Excel report: {str(e)}")
                     st.stop()
